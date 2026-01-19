@@ -20,6 +20,13 @@ app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
     #clear { background:#e74c3c; color:white; }
     textarea { width:100%; height:calc(100vh - 60px); padding:15px; box-sizing:border-box; font-size:16px; border:none; outline:none; }
   </style>
+<link rel="manifest" href="/manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(() => console.log('Service Worker registriert'));
+  }
+</script>
 </head>
 <body>
   <header>
