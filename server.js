@@ -60,4 +60,4 @@ app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
 
 app.post('/note', (req, res) => { fs.writeFileSync(DATA_FILE, req.body.text || ''); res.sendStatus(200); });
 
-app.listen(PORT, () => { console.log(Aaipppp laeuft auf http://localhost:${PORT}); });
+app.listen(PORT, () => { console.log(Server läuft auf http://localhost:${PORT}); });
