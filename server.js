@@ -44,6 +44,20 @@ function deleteHistory(index) {
   }
 }
 
+let lastText = "";
+
+setInterval(async () => {
+  const res = await fetch("/note");
+  const text = await res.text();
+
+  // Nur überschreiben, wenn du gerade NICHT tippst
+  if (document.activeElement !== note && text !== lastText) {
+    note.value = text;
+    lastText = text;
+  }
+}, 2000);
+
+
 // ---------------- Hauptseite ----------------
 app.get('/', (req,res)=>{
   res.write('<!DOCTYPE html><html lang="de"><head>');
@@ -51,22 +65,89 @@ app.get('/', (req,res)=>{
   res.write('<title>Quick Notes</title>');
   res.write('<style>');
   res.write(`
-    body{margin:0;font-family:sans-serif;background:#f5f5f5;}
-    header{display:flex;gap:6px;align-items:center;padding:10px;background:#222;color:#fff;}
-    header span{flex:1;}
-    button{background:#444;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:14px;}
-    button.danger{background:#e74c3c;}
-    textarea{width:100%;height:calc(100vh - 52px);font-size:16px;padding:10px;border:none;box-sizing:border-box;}
-    .tab{display:none;padding:10px;background:#fff;max-height:50vh;overflow:auto;border-top:1px solid #ccc;}
-    .item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;align-items:center;}
-    .item:hover{background:#f0f0f0;}
-    .del{color:red;font-weight:bold;cursor:pointer;margin-left:10px;font-size:18px;}
-    #backBtn{background:#888;color:white;margin-bottom:8px;}
+    body{
+  margin:0;
+  font-family:sans-serif;
+  background:#121212;
+  color:#eaeaea;
+}
+
+header{
+  display:flex;
+  gap:6px;
+  align-items:center;
+  padding:10px;
+  background:#1e1e1e;
+  color:#fff;
+}
+
+header span{flex:1;}
+
+button{
+  background:#2c2c2c;
+  color:#fff;
+  border:none;
+  padding:6px 10px;
+  border-radius:6px;
+  font-size:14px;
+}
+
+button.danger{
+  background:#b3261e;
+}
+
+textarea{
+  width:100%;
+  height:calc(100vh - 52px);
+  font-size:16px;
+  padding:10px;
+  border:none;
+  box-sizing:border-box;
+  background:#121212;
+  color:#eaeaea;
+}
+
+.tab{
+  display:none;
+  padding:10px;
+  background:#1a1a1a;
+  max-height:50vh;
+  overflow:auto;
+  border-top:1px solid #333;
+}
+
+.item{
+  padding:10px;
+  border-bottom:1px solid #333;
+  cursor:pointer;
+  font-size:14px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.item:hover{
+  background:#222;
+}
+
+.del{
+  color:#ff5c5c;
+  font-size:22px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+#backBtn{
+  background:#333;
+  color:#fff;
+  margin-bottom:8px;
+}
   `);
   res.write('</style></head><body>');
 
   // Header
   res.write('<header><span>📝 Quick Notes</span>');
+  res.write('<button id="copy">Copy</button>');
   res.write('<button id="paste">Paste</button>');
   res.write('<button id="historyBtn">History</button>');
   res.write('<button id="clear" class="danger">Clear</button>');
@@ -85,6 +166,23 @@ app.get('/', (req,res)=>{
 
     async function save(){clearTimeout(window.t);window.t=setTimeout(()=>fetch("/note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:note.value})}),300);}
     fetch("/note").then(r=>r.text()).then(t=>note.value=t);
+
+    // Copy
+    document.getElementById("copy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(note.value);
+  } catch (e) {
+    alert("Copy nicht erlaubt");
+  }
+};
+
+fetch("/note")
+  .then(r => r.text())
+  .then(t => {
+    note.value = t;
+    lastText = t;
+  });
+
 
     // Paste
     document.getElementById("paste").onclick=async()=>{
