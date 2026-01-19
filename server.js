@@ -1,18 +1,43 @@
-// server.js // Minimal Notiz-App: laeuft auf http://localhost:3001 // Notizen werden serverseitig gespeichert, damit sie auf PC & Handy gleich sind
+// server.js // Minimal Notiz-App mit PWA-Unterstützung, läuft auf http://localhost:3001 // Notizen werden serverseitig gespeichert
 
-const express = require('express'); const fs = require('fs'); const path = require('path');
+const express = require('express'); const fs = require('fs');
 
-const app = express(); const PORT = 3001; const DATA_FILE = path.join(__dirname, 'note.txt');
+const app = express(); const PORT = 3001; const DATA_FILE = 'note.txt';
 
 app.use(express.json());
 
-app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
+// PWA-Dateien direkt ausliefern app.get('/manifest.json', (req, res) => { res.json({ name: "Quick Notes", short_name: "Notes", start_url: "/", display: "standalone", background_color: "#f5f5f5", theme_color: "#222222", icons: [ { src: "/icon-192.png", sizes: "192x192", type: "image/png" }, { src: "/icon-512.png", sizes: "512x512", type: "image/png" } ] }); });
+
+app.get('/service-worker.js', (req, res) => { res.type('application/javascript'); res.send(` const CACHE_NAME = 'quick-notes-cache-v1'; const urlsToCache = ['/', '/manifest.json'];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(caches.match(event.request).then(response => response || fetch(event.request)));
+});
+
+`); });
+
+// Icons als Base64 einbetten (keine zusätzlichen Dateien nötig) app.get('/icon-192.png', (req, res) => { const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAYAAACt...'; // Hier dein Base64-Icon einfügen const img = Buffer.from(base64, 'base64'); res.type('png').send(img); }); app.get('/icon-512.png', (req, res) => { const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe...'; // Base64-Icon const img = Buffer.from(base64, 'base64'); res.type('png').send(img); });
+
+// Hauptseite app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
 
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Notes</title>
+  <link rel="manifest" href="/manifest.json">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log('Service Worker registriert'));
+    }
+  </script>
   <style>
     body { font-family: sans-serif; margin: 0; padding: 0; background:#f5f5f5; }
     header { display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:#222; color:#fff; }
@@ -20,13 +45,6 @@ app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
     #clear { background:#e74c3c; color:white; }
     textarea { width:100%; height:calc(100vh - 60px); padding:15px; box-sizing:border-box; font-size:16px; border:none; outline:none; }
   </style>
-<link rel="manifest" href="/manifest.json">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/service-worker.js')
-      .then(() => console.log('Service Worker registriert'));
-  }
-</script>
 </head>
 <body>
   <header>
@@ -63,10 +81,6 @@ app.get('/', (req, res) => { res.send(`<!DOCTYPE html>
     loadNote();
   </script></body>
 </html>`);
-});app.get('/note', (req, res) => { if (!fs.existsSync(DATA_FILE)) return res.send(''); res.send(fs.readFileSync(DATA_FILE, 'utf8')); });
+});// Notizen-Endpunkte app.get('/note', (req, res) => { if (!fs.existsSync(DATA_FILE)) return res.send(''); res.send(fs.readFileSync(DATA_FILE, 'utf8')); }); app.post('/note', (req, res) => { fs.writeFileSync(DATA_FILE, req.body.text || ''); res.sendStatus(200); });
 
-app.post('/note', (req, res) => { fs.writeFileSync(DATA_FILE, req.body.text || ''); res.sendStatus(200); });
-
-app.listen(PORT, function() {
-  console.log('Server läuft auf http://localhost:' + PORT);
-});
+app.listen(PORT, function() { console.log('Server läuft auf http://localhost:' + PORT); });
