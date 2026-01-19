@@ -85,6 +85,10 @@ textarea{width:100%;height:calc(100vh - 52px);font-size:16px;padding:10px;border
 
 <script>
 const note = document.getElementById("note");
+note.addEventListener("input", ()=>{
+ save();
+ lastText= note.value;
+});
 const historyTab = document.getElementById("historyTab");
 const historyList = document.getElementById("historyList");
 
