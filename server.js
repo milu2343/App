@@ -10,7 +10,7 @@ const MAX_HISTORY = 50;
 
 app.use(express.json());
 
-// --------------- Helper ----------------
+// ---------------- Helpers ----------------
 function readNote() {
   if (!fs.existsSync(NOTE_FILE)) return '';
   return fs.readFileSync(NOTE_FILE, 'utf8');
@@ -22,9 +22,8 @@ function writeNote(text) {
 
 function readHistory() {
   if (!fs.existsSync(HISTORY_FILE)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
-  } catch(e) { return []; }
+  try { return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')); } 
+  catch(e) { return []; }
 }
 
 function addHistory(text) {
@@ -40,12 +39,12 @@ function addHistory(text) {
 function deleteHistory(index) {
   let h = readHistory();
   if (index>=0 && index<h.length) {
-    h.splice(index, 1);
+    h.splice(index,1);
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(h));
   }
 }
 
-// --------------- Hauptseite ----------------
+// ---------------- Hauptseite ----------------
 app.get('/', (req,res)=>{
   res.write('<!DOCTYPE html><html lang="de"><head>');
   res.write('<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">');
@@ -61,7 +60,7 @@ app.get('/', (req,res)=>{
     .tab{display:none;padding:10px;background:#fff;max-height:50vh;overflow:auto;border-top:1px solid #ccc;}
     .item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;align-items:center;}
     .item:hover{background:#f0f0f0;}
-    .del{color:red;font-weight:bold;cursor:pointer;margin-left:10px;}
+    .del{color:red;font-weight:bold;cursor:pointer;margin-left:10px;font-size:18px;}
     #backBtn{background:#888;color:white;margin-bottom:8px;}
   `);
   res.write('</style></head><body>');
@@ -74,7 +73,7 @@ app.get('/', (req,res)=>{
   res.write('</header>');
 
   // Tabs
-  res.write('<textarea id="note"></textarea>');
+  res.write('<textarea id="note" placeholder="Notizen hier..."></textarea>');
   res.write('<div id="historyTab" class="tab"><button id="backBtn">← Back to Notes</button><div id="historyList"></div></div>');
 
   // JS
@@ -88,10 +87,18 @@ app.get('/', (req,res)=>{
     fetch("/note").then(r=>r.text()).then(t=>note.value=t);
 
     // Paste
-    document.getElementById("paste").onclick=async()=>{try{note.value+=await navigator.clipboard.readText();save();}catch(e){alert("Clipboard blockiert");}};
+    document.getElementById("paste").onclick=async()=>{
+      try{note.value+=await navigator.clipboard.readText();save();}
+      catch(e){alert("Clipboard blockiert");}
+    };
 
     // Clear
-    document.getElementById("clear").onclick=async()=>{if(!note.value)return;await fetch("/history-add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:note.value})});note.value="";save();};
+    document.getElementById("clear").onclick=async()=>{
+      if(!note.value)return;
+      await fetch("/history-add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:note.value})});
+      note.value="";
+      save();
+    };
 
     // History Tab öffnen
     document.getElementById("historyBtn").onclick=async()=>{
@@ -101,15 +108,21 @@ app.get('/', (req,res)=>{
       h.forEach((item,index)=>{
         const div=document.createElement("div");
         div.className="item";
-        div.textContent=item.text;
-        // klick auf Text → zurück in Notizen
-        div.onclick=()=>{note.value=item.text;save();historyTab.style.display="none";};
-        // delete button
+
+        // Textspan anklickbar
+        const textSpan=document.createElement("span");
+        textSpan.textContent=item.text;
+        textSpan.style.flex="1";
+        textSpan.onclick=()=>{note.value=item.text;save();historyTab.style.display="none";note.style.display="block";};
+        div.appendChild(textSpan);
+
+        // Delete Button
         const del=document.createElement("span");
         del.textContent="×";
         del.className="del";
         del.onclick=async(e)=>{e.stopPropagation();await fetch("/history-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({index})});div.remove();};
         div.appendChild(del);
+
         historyList.appendChild(div);
       });
       historyTab.style.display="block";
@@ -129,7 +142,6 @@ app.get('/', (req,res)=>{
 // ---------------- API ----------------
 app.get('/note',(req,res)=>res.send(readNote()));
 app.post('/note',(req,res)=>{writeNote(req.body.text);res.sendStatus(200);});
-
 app.get('/history',(req,res)=>res.json(readHistory()));
 app.post('/history-add',(req,res)=>{addHistory(req.body.text||'');res.sendStatus(200);});
 app.post('/history-del',(req,res)=>{deleteHistory(req.body.index);res.sendStatus(200);});
