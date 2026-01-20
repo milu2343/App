@@ -52,9 +52,15 @@ h3{margin-top:10px}
 <body>
 
 <script>
-let pw=prompt("Passwort");
-if(pw!="${PASSWORD}"){
-  alert("Falsches Passwort");document.body.innerHTML="<h2>Kein Zugriff</h2>";throw "Wrong password";
+let allowed = false;
+while(!allowed){
+  let pw = prompt("Passwort eingeben:");
+  if(pw === "${PASSWORD}"){
+    allowed = true;
+    break;
+  } else {
+    alert("Falsches Passwort, bitte erneut eingeben!");
+  }
 }
 </script>
 
