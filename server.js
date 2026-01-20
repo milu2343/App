@@ -231,10 +231,11 @@ qt.oninput = () => ws.send(JSON.stringify({type:"quick",text:qt.value,client:cli
 function renderCats(){
   view.innerHTML='<input id="nc" placeholder="Neue Kategorie"><button onclick="addCat()">+</button>';
   Object.keys(data.categories||{}).forEach(c=>{
-    view.innerHTML+=`<div class=item>
-      <button onclick="openCat('${c}')">${c}</button>
-      <button onclick="delCat('${c}')">🗑</button>
-    </div>`;
+    view.innerHTML += `<div class="item">
+  <button onclick="openCat('${c}')">${c}</button>
+  <button onclick="delCat('${c}')">🗑</button>
+</div>`;
+
   });
 }
 function addCat(){
@@ -248,10 +249,11 @@ function openCat(c){
   activeCat = c;
   view.innerHTML=`<button onclick="renderCats()">⬅</button><h3>${c}</h3><button onclick="addNote()">➕</button>`;
   (data.categories[c]||[]).forEach((n,i)=>{
-    view.innerHTML+=`<div class=item>
-      <textarea oninput="editNote(${i},this.value)">${n}</textarea>
-      <button onclick="delNote(${i})">🗑</button>
-    </div>`;
+    view.innerHTML += `<div class="item">
+  <textarea oninput="editNote(${i},this.value)">${n}</textarea>
+  <button onclick="delNote(${i})">🗑</button>
+</div>`;
+
   });
 }
 function addNote(){ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""}))}
