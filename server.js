@@ -59,10 +59,11 @@ wss.on("connection", ws => {
   ws.on("message", async msg => {
     const m = JSON.parse(msg);
 
+    // Quick Notes
     if (m.type === "quick") {
       if (m.time > data.quickMeta.time || (m.time === data.quickMeta.time && m.client !== data.quickMeta.client)) {
         if (data.quickNote && data.quickNote !== m.text) {
-          data.history.unshift(data.quickNote);
+          data.history.unshift({ text: data.quickNote, time: new Date().toISOString() });
           data.history = data.history.slice(0, 50);
         }
         data.quickNote = m.text;
@@ -71,8 +72,9 @@ wss.on("connection", ws => {
       }
     }
 
+    // Categories
     if (m.type === "addCat" && !data.categories[m.name]) {
-      data.categories[m.name] = [];
+      data.categories = { [m.name]: [], ...data.categories }; // neue Kategorie oben
       await saveData();
     }
     if (m.type === "delCat") {
@@ -80,12 +82,13 @@ wss.on("connection", ws => {
       await saveData();
     }
 
+    // Notes
     if (m.type === "addNote") {
-      data.categories[m.cat].unshift(m.text);
+      data.categories[m.cat].unshift({ text: m.text, time: new Date().toISOString() });
       await saveData();
     }
     if (m.type === "editNote") {
-      data.categories[m.cat][m.i] = m.text;
+      data.categories[m.cat][m.i].text = m.text;
       await saveData();
     }
     if (m.type === "delNote") {
@@ -114,7 +117,7 @@ self.addEventListener("fetch", () => {});
 `);
 });
 
-// ---------------- API für Polling ----------------
+// ---------------- API ----------------
 app.get("/data", (_, res) => res.json(data));
 
 // ---------------- UI ----------------
@@ -136,11 +139,15 @@ button.big{font-size:16px;padding:10px 16px}
 textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px;font-size:16px}
 textarea.full{height:calc(100vh - 60px)}
 .item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
+.note{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.note textarea{width:100%;border:1px solid #555;padding:6px;border-radius:4px;background:#222;color:#eee}
+.note button{width:60px;padding:4px}
+.timestamp{font-size:12px;color:#aaa}
 </style>
 </head>
 <body>
 
-<header id="top">
+<header>
 <button id="btnQuick">Quick</button>
 <button id="btnNotes">Notizen</button>
 <button id="btnHistory">History</button>
@@ -179,17 +186,14 @@ function show(id){
   render();
 }
 
-// --------- WebSocket + Polling fallback ---------
+// --------- WebSocket ---------
 function connect(){
   ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
   ws.onmessage = e=>{
     const m = JSON.parse(e.data);
     if(m.type==="sync"){ data = m.data; render(); }
   };
-  ws.onclose = ()=>{
-    console.log("WS getrennt, starte Polling fallback");
-    setInterval(fetchData,2000);
-  };
+  ws.onclose = ()=>{ console.log("WS getrennt, starte Polling fallback"); setInterval(fetchData,2000); };
 }
 
 // Polling fallback
@@ -207,7 +211,7 @@ qt.oninput = ()=> ws.send(JSON.stringify({type:"quick",text:qt.value,client:clie
 function render(){
   if(document.getElementById("quick").style.display==="block") qt.value = data.quickNote || "";
   if(document.getElementById("history").style.display==="block")
-    historyDiv.innerHTML = (data.history||[]).map(x=>"<div class='item'>"+x+"</div>").join("");
+    historyDiv.innerHTML = (data.history||[]).map(x=>"<div class='item'>"+x.text+"<div class='timestamp'>"+new Date(x.time).toLocaleString()+"</div></div>").join("");
   if(document.getElementById("notes").style.display==="block")
     activeCat ? openCat(activeCat) : renderCats();
 }
@@ -221,20 +225,30 @@ function renderCats(){
 
 function addCat(){
   const val = document.getElementById("nc").value.trim();
-  if(val) ws.send(JSON.stringify({type:"addCat",name:val}));
+  if(!val) return;
+  ws.send(JSON.stringify({type:"addCat",name:val}));
 }
 
 function delCat(c){ ws.send(JSON.stringify({type:"delCat",cat:c})); }
 
 function openCat(c){
   activeCat = c;
-  view.innerHTML='<button onclick="renderCats()">⬅ Zurück</button><h3>'+c+'</h3><button class="big" onclick="addNote()">➕ Notiz erstellen</button>';
-  (data.categories[c]||[]).forEach((n,i)=>{
-    view.innerHTML+='<div class="item"><textarea oninput="editNote('+i+',this.value)">'+n+'</textarea><button onclick="delNote('+i+')">🗑</button></div>';
+  view.innerHTML='<button onclick="renderCats()">⬅ Zurück</button><h3>'+c+'</h3><button onclick="addNote()">➕ Notiz erstellen</button>';
+  (data.categories[c]||[]).forEach((note,i)=>{
+    const div = document.createElement("div");
+    div.className="note";
+    div.innerHTML='<textarea oninput="editNote('+i+',this.value)">'+note.text+'</textarea>'
+      +'<div><button onclick="delNote('+i+')">🗑</button>'
+      +'<span class="timestamp">'+new Date(note.time).toLocaleString()+'</span></div>';
+    view.appendChild(div);
   });
 }
 
-function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""})); }
+function addNote(){
+  const t = prompt("Notiz eingeben:");
+  if(t) ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:t}));
+}
+
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
 
