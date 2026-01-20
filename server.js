@@ -17,9 +17,21 @@ const HEADERS = {
 
 // Load data from Gist
 async function loadData() {
-  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
-  const gist = await res.json();
-  return JSON.parse(gist.files["notes.json"].content);
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
+    const gist = await res.json();
+    if(!gist.files || !gist.files["notes.json"] || !gist.files["notes.json"].content) {
+      // Wenn Gist leer oder ungültig
+      const empty = { quickNote:"", history:[], categories:{} };
+      await saveData(empty);
+      return empty;
+    }
+    return JSON.parse(gist.files["notes.json"].content);
+  } catch(e) {
+    console.error("Fehler beim Laden der Daten:", e);
+    // Immer leere Struktur zurückgeben, damit die App startet
+    return { quickNote:"", history:[], categories:{} };
+  }
 }
 
 // Save data to Gist
