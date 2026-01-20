@@ -131,7 +131,7 @@ button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:
 textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px;font-size:16px}
 textarea.full{height:calc(100vh - 60px)}
 .item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-#login{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh}
+#login{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;z-index: 9999}
 #login input,#login button{margin:10px 0;width:80%;max-width:300px;font-size:18px;padding:10px}
 </style>
 </head>
