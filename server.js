@@ -1,243 +1,228 @@
 const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
-const fetch = require("node-fetch");
+const fetch = (...args) => import("node-fetch").then(({default: fetch}) => fetch(...args));
+const fetch = (...a)=>import("node-fetch").then(({default:f})=>f(...a));
 
 const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
 const PORT = process.env.PORT || 3001;
-const TOKEN = process.env.GITHUB_TOKEN;
-const GIST_ID = process.env.GIST_ID;
+@@ -9,42 +9,41 @@ const GIST_ID = process.env.GIST_ID;
 
 app.use(express.json());
 
+const headers = {
+  "Authorization": `Bearer ${TOKEN}`,
+  "Accept": "application/vnd.github+json"
 const HEADERS = {
   Authorization: `Bearer ${TOKEN}`,
   Accept: "application/vnd.github+json"
 };
 
-// ---------------- Daten ----------------
-let data = { quickNote:"", quickMeta:{client:"",time:0}, history:[], categories:{} };
-
-// ---------------- Gist Load/Save ----------------
-async function loadData() {
-  try {
-    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
-    const g = await r.json();
-    if(g.files && g.files["notes.json"] && g.files["notes.json"].content)
-      data = JSON.parse(g.files["notes.json"].content);
-  } catch(e){ console.error("Gist load error:", e); }
+async function loadData(){
+  const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers });
+  const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
+  const j = await r.json();
+  return JSON.parse(j.files["notes.json"].content);
 }
 
-async function saveData() {
-  try {
-    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method:"PATCH",
-      headers:{ ...HEADERS, "Content-Type":"application/json" },
-      body: JSON.stringify({ files: { "notes.json": { content: JSON.stringify(data,null,2) } } })
-    });
-  } catch(e){ console.error("Gist save error:", e); }
-  broadcast();
-}
-
-// ---------------- WebSocket ----------------
-function broadcast() {
-  const msg = JSON.stringify({ type:"sync", data });
-  wss.clients.forEach(c=>{ if(c.readyState===1) c.send(msg); });
-}
-
-wss.on("connection", ws => {
-  ws.send(JSON.stringify({ type:"sync", data }));
-
-  ws.on("message", async msg=>{
-    const m = JSON.parse(msg);
-
-    if(m.type==="quick"){
-      if(m.time>data.quickMeta.time || (m.time===data.quickMeta.time && m.client!==data.quickMeta.client)){
-        if(data.quickNote && data.quickNote!==m.text){
-          data.history.unshift(data.quickNote);
-          data.history = data.history.slice(0,50);
-        }
-        data.quickNote = m.text;
-        data.quickMeta = { client:m.client, time:m.time };
-        await saveData();
-      }
-    }
-
-    if(m.type==="addCat" && !data.categories[m.name]){
-      data.categories[m.name]=[];
-      await saveData();
-    }
-    if(m.type==="delCat"){
-      delete data.categories[m.cat];
-      await saveData();
-    }
-
-    if(m.type==="addNote"){
-      data.categories[m.cat].unshift(m.text);
-      await saveData();
-    }
-    if(m.type==="editNote"){
-      data.categories[m.cat][m.i]=m.text;
-      await saveData();
-    }
-    if(m.type==="delNote"){
-      data.categories[m.cat].splice(m.i,1);
-      await saveData();
-    }
+async function saveData(data){
+  await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    method: "PATCH",
+    headers: { ...headers, "Content-Type":"application/json" },
+    body: JSON.stringify({
+      files: { "notes.json": { content: JSON.stringify(data, null, 2) } }
+    })
+async function saveData(d){
+  await fetch(`https://api.github.com/gists/${GIST_ID}`,{
+    method:"PATCH",
+    headers:{...HEADERS,"Content-Type":"application/json"},
+    body:JSON.stringify({files:{ "notes.json":{content:JSON.stringify(d,null,2)} }})
   });
-});
+}
 
-// ---------------- PWA ----------------
-app.get("/manifest.json", (_,res)=>res.json({
-  name:"Notes",
-  short_name:"Notes",
-  start_url:"/",
-  display:"standalone",
-  background_color:"#121212",
-  theme_color:"#121212",
-  icons:[]
-}));
-
-app.get("/sw.js", (_,res)=>{
-  res.set("Content-Type","application/javascript");
-  res.send(`
-self.addEventListener("install", e => self.skipWaiting());
-self.addEventListener("fetch", () => {});
-`);
-});
-
-// ---------------- API für Polling ----------------
-app.get("/data", (_,res)=>res.json(data));
-
-// ---------------- UI ----------------
-app.get("/", (_,res)=>{
+/* ---------- PAGE ---------- */
+app.get("/", (req, res) => {
 res.send(`<!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
+/* ---------- MAIN PAGE ---------- */
+app.get("/",(_,res)=>{
+res.send(`<!DOCTYPE html><html lang="de"><head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Notes</title>
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#121212">
 <style>
-body{margin:0;background:#121212;color:#eee;font-family:sans-serif;height:100vh;overflow:hidden}
-header{display:flex;gap:6px;padding:10px;background:#1e1e1e;flex-wrap:wrap}
+body{margin:0;font-family:sans-serif;background:#121212;color:#eee}
+body{margin:0;font-family:sans-serif;background:#121212;color:#eee;height:100vh}
+header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
+button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px}
+.tab{display:none;padding:10px}
+textarea{width:100%;height:70vh;background:#121212;color:#eee;border:1px solid #333;padding:10px}
+.item{border-bottom:1px solid #333;padding:10px}
 button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+button.big{font-size:16px;padding:10px 16px}
 .tab{display:none;height:calc(100vh - 60px);padding:10px;overflow:auto}
-textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px;font-size:16px}
-textarea.full{height:calc(100vh - 60px)}
+textarea{width:100%;height:70vh;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px}
 .item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
+.small{font-size:12px;color:#aaa}
+h3{margin-top:10px}
 </style>
 </head>
 <body>
-
-<header id="top">
-<button id="btnQuick">Quick</button>
-<button id="btnNotes">Notizen</button>
-<button id="btnHistory">History</button>
-<input id="search" placeholder="Suche..." oninput="render()">
+@@ -56,10 +55,12 @@ textarea{width:100%;height:70vh;background:#121212;color:#eee;border:1px solid #
 </header>
 
 <div id="quick" class="tab">
-<textarea id="quickText" class="full" placeholder="Quick Notes..."></textarea>
+<div>
+<button onclick="copy()">Copy</button>
+<button onclick="paste()">Paste</button>
+<button onclick="clearQuick()">Clear</button>
+<textarea id="q"></textarea>
+</div>
+<textarea id="q" placeholder="Quick Notes..."></textarea>
 </div>
 
 <div id="notes" class="tab"><div id="view"></div></div>
-<div id="history" class="tab"></div>
+@@ -78,7 +79,7 @@ function show(id){
+}
+show("quick");
 
-<script>
-if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js");}
-
-let clientId = Math.random().toString(36).slice(2);
-let ws, activeCat = null, data = {quickNote:"",history:[],categories:{}};
-
-const qt = document.getElementById("quickText");
-const view = document.getElementById("view");
-const historyDiv = document.getElementById("history");
-
-const btnQuick = document.getElementById("btnQuick");
-const btnNotes = document.getElementById("btnNotes");
-const btnHistory = document.getElementById("btnHistory");
-
-btnQuick.onclick = ()=>show('quick');
-btnNotes.onclick = ()=>show('notes');
-btnHistory.onclick = ()=>show('history');
-
-function show(id){
-  document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
-  document.getElementById(id).style.display="block";
-  render();
+/* Quick */
+/* ---------- Quick Notes ---------- */
+async function loadQuick(){
+  const d=await fetch("/data").then(r=>r.json());
+  q.value=d.quickNote;
+@@ -91,100 +92,100 @@ function clearQuick(){
+  q.value="";
 }
 
-// --------- WebSocket + Polling ---------
-function connect(){
-  ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage = e=>{
-    const m = JSON.parse(e.data);
-    if(m.type==="sync"){ data = m.data; render(); }
-  };
-  ws.onclose = ()=>{
-    console.log("WS getrennt, starte Polling fallback");
-    setInterval(fetchData,2000);
-  };
+/* History */
+/* ---------- History ---------- */
+async function loadHistory(){
+  const d=await fetch("/data").then(r=>r.json());
+  history.innerHTML=d.history.map(x=>"<div class='item'>"+x+"</div>").join("");
 }
 
-// Fallback Polling
-async function fetchData(){
-  try{
-    const r = await fetch("/data");
-    const d = await r.json();
-    data = d; render();
-  }catch(e){ console.error("Polling Fehler:",e); }
-}
-
-// --------- Rendering ---------
-qt.oninput = ()=> ws.send(JSON.stringify({type:"quick",text:qt.value,client:clientId,time:Date.now()}));
-
-function render(){
-  if(document.getElementById("quick").style.display==="block") qt.value = data.quickNote || "";
-  if(document.getElementById("history").style.display==="block")
-    historyDiv.innerHTML = (data.history||[]).map(x=>"<div class='item'>"+x+"</div>").join("");
-  if(document.getElementById("notes").style.display==="block")
-    activeCat ? openCat(activeCat) : renderCats();
-}
-
-function renderCats(){
-  view.innerHTML='<input id="nc" placeholder="Neue Kategorie"><button onclick="addCat()">+</button>';
-  Object.keys(data.categories||{}).forEach(c=>{
-    view.innerHTML+='<div class="item"><button onclick="openCat(\''+c+'\')">'+c+'</button><button onclick="delCat(\''+c+'\')">🗑</button></div>';
+/* Categories */
+/* ---------- Categories / Notizen ---------- */
+async function loadCats(){
+  activeCat=null;
+  const d=await fetch("/data").then(r=>r.json());
+  view.innerHTML='<input id="c"><button onclick="addCat()">+</button>';
+  view.innerHTML='<input id="c" placeholder="Neue Kategorie"><button onclick="addCat()">Kategorie +</button>';
+  Object.keys(d.categories).forEach(c=>{
+    view.innerHTML+=\`<div class="item"><button onclick="openCat('\${c}')">\${c}</button></div>\`;
+    view.innerHTML+=\`<div class="item"><button class="big" onclick="openCat('\${c}')">\${c}</button></div>\`;
   });
 }
 
 function addCat(){
-  const val=document.getElementById("nc").value.trim();
-  if(val) ws.send(JSON.stringify({type:"addCat",name:val}));
+  fetch("/cat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:c.value})})
+  const c = document.getElementById("c").value.trim();
+  if(!c) return;
+  fetch("/cat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:c})})
+    .then(loadCats);
 }
 
-function delCat(c){ ws.send(JSON.stringify({type:"delCat",cat:c})); }
-
-function openCat(c){
+async function openCat(c){
   activeCat=c;
-  view.innerHTML='<button onclick="renderCats()">⬅</button><h3>'+c+'</h3><button onclick="addNote()">➕</button>';
-  (data.categories[c]||[]).forEach((n,i)=>{
-    view.innerHTML+='<div class="item"><textarea oninput="editNote('+i+',this.value)">'+n+'</textarea><button onclick="delNote('+i+')">🗑</button></div>';
+  const d=await fetch("/data").then(r=>r.json());
+  view.innerHTML=\`<button onclick="loadCats()">⬅</button><h3>\${c}</h3><button onclick="newNote()">➕</button>\`;
+  d.categories[c].forEach((n,i)=>{
+  const notes = d.categories[c];
+  view.innerHTML=\`<button onclick="loadCats()">⬅ Zurück</button><h3>\${c}</h3><button class="big" onclick="newNote()">➕ Notiz erstellen</button>\`;
+  notes.forEach((n,i)=>{
+    view.innerHTML+=\`<div class="item">\${n}
+      <button onclick="edit(\${i})">✏️</button>
+      <button onclick="del(\${i})">🗑</button>
+    </div>\`;
+      </div>\`;
   });
 }
 
-function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""})); }
-function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
-function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
+function newNote(){
+  const t=prompt("Notiz");
+  const t=prompt("Notiz schreiben");
+  if(t) fetch("/note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})})
+    .then(()=>openCat(activeCat));
+}
 
-// Start
-connect();
-show('quick');
+function edit(i){
+  const t=prompt("Neu");
+  const t=prompt("Bearbeiten");
+  if(t!==null) fetch("/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i,text:t})})
+    .then(()=>openCat(activeCat));
+}
+
+function del(i){
+  fetch("/del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})})
+  if(confirm("Notiz löschen?")) fetch("/del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})})
+    .then(()=>openCat(activeCat));
+}
 </script>
 </body>
 </html>`);
+</body></html>`);
 });
 
-// ---------------- START ----------------
-loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
+/* ---------- API ---------- */
+app.get("/data", async (r,s)=>s.json(await loadData()));
+app.get("/data", async(_,s)=>s.json(await loadData()));
+
+app.post("/quick", async (r,s)=>{
+app.post("/quick", async(r,s)=>{
+  const d=await loadData();
+  d.quickNote=r.body.text;
+  await saveData(d);
+  s.sendStatus(200);
+  await saveData(d); s.sendStatus(200);
+});
+
+app.post("/clear", async (r,s)=>{
+app.post("/clear", async(_,s)=>{
+  const d=await loadData();
+  if(d.quickNote) d.history.unshift(d.quickNote);
+  d.quickNote="";
+  d.history=d.history.slice(0,50);
+  await saveData(d);
+  s.sendStatus(200);
+  d.quickNote=""; d.history=d.history.slice(0,50);
+  await saveData(d); s.sendStatus(200);
+});
+
+app.post("/cat", async (r,s)=>{
+app.post("/cat", async(r,s)=>{
+  const d=await loadData();
+  d.categories[r.body.name]=[];
+  await saveData(d);
+  s.sendStatus(200);
+  if(!d.categories[r.body.name]) d.categories[r.body.name]=[];
+  await saveData(d); s.sendStatus(200);
+});
+
+app.post("/note", async (r,s)=>{
+app.post("/note", async(r,s)=>{
+  const d=await loadData();
+  d.categories[r.body.cat].unshift(r.body.text);
+  await saveData(d);
+  s.sendStatus(200);
+  await saveData(d); s.sendStatus(200);
+});
+
+app.post("/edit", async (r,s)=>{
+app.post("/edit", async(r,s)=>{
+  const d=await loadData();
+  d.categories[r.body.cat][r.body.i]=r.body.text;
+  await saveData(d);
+  s.sendStatus(200);
+  await saveData(d); s.sendStatus(200);
+});
+
+app.post("/del", async (r,s)=>{
+app.post("/del", async(r,s)=>{
+  const d=await loadData();
+  d.categories[r.body.cat].splice(r.body.i,1);
+  await saveData(d);
+  s.sendStatus(200);
+  await saveData(d); s.sendStatus(200);
+});
+
+app.listen(PORT,()=>console.log("Server läuft"));
