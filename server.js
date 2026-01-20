@@ -22,16 +22,17 @@ res.send(`<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notes</title>
+
 <style>
-body{margin:0;font-family:sans-serif;background:#121212;color:#eee}
+body{margin:0;font-family:sans-serif;background:#121212;color:#eee;height:100vh}
 header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
 button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px}
 button.big{font-size:16px;padding:10px 16px}
-.tab{display:none;padding:10px}
-textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px}
+.tab{display:none;height:calc(100vh - 60px);padding:10px}
+textarea{width:100%;height:calc(100% - 50px);background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px}
 .item{border-bottom:1px solid #333;padding:10px}
 .small{font-size:12px;color:#aaa}
-h3{margin-top:20px}
+h3{margin-top:10px}
 </style>
 </head>
 
@@ -45,15 +46,17 @@ h3{margin-top:20px}
 
 <!-- QUICK NOTES -->
 <div id="quick" class="tab">
-  <button onclick="copy()">Copy</button>
-  <button onclick="paste()">Paste</button>
-  <button onclick="clearQuick()">Clear</button>
-  <textarea id="quickText"></textarea>
+  <div>
+    <button onclick="copy()">Copy</button>
+    <button onclick="paste()">Paste</button>
+    <button onclick="clearQuick()">Clear</button>
+  </div>
+  <textarea id="quickText" placeholder="Quick Notes..."></textarea>
 </div>
 
 <!-- NOTIZEN -->
 <div id="notes" class="tab">
-  <div id="catView"></div>
+  <div id="notesView"></div>
 </div>
 
 <!-- HISTORY -->
@@ -62,32 +65,37 @@ h3{margin-top:20px}
 <script>
 const quick = document.getElementById("quickText");
 let lastText = "";
-let activeCategory = null;
+let currentCategory = null;
 
 /* ---------- Tabs ---------- */
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
   document.getElementById(id).style.display="block";
+  if(id==="notes") showCategories();
   if(id==="history") loadHistory();
-  if(id==="notes") loadCategories();
 }
 show("quick");
 
-/* ---------- Quick Notes ---------- */
+/* ---------- QUICK NOTES ---------- */
 setInterval(async()=>{
   const t = await fetch("/note").then(r=>r.text());
   if(document.activeElement!==quick && t!==lastText){
-    quick.value=t; lastText=t;
+    quick.value = t;
+    lastText = t;
   }
 },1000);
 
 quick.oninput=()=>{
-  lastText=quick.value;
-  fetch("/note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:quick.value})});
+  lastText = quick.value;
+  fetch("/note",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text:quick.value})
+  });
 };
 
 function copy(){navigator.clipboard.writeText(quick.value)}
-async function paste(){quick.value+=await navigator.clipboard.readText()}
+async function paste(){quick.value += await navigator.clipboard.readText()}
 function clearQuick(){
   if(!quick.value.trim()) return;
   fetch("/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:quick.value})});
@@ -95,22 +103,26 @@ function clearQuick(){
   fetch("/note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:""})});
 }
 
-/* ---------- History ---------- */
+/* ---------- HISTORY ---------- */
 async function loadHistory(){
   const h = await fetch("/history").then(r=>r.json());
   history.innerHTML = h.map(x=>"<div class='item'>"+x.text+"</div>").join("");
 }
 
-/* ---------- Kategorien ---------- */
-async function loadCategories(){
-  activeCategory = null;
+/* ---------- NOTIZEN ---------- */
+async function showCategories(){
+  currentCategory = null;
   const data = await fetch("/cat").then(r=>r.json());
-  catView.innerHTML = \`
+  notesView.innerHTML = \`
     <input id="newCat" placeholder="Neue Kategorie">
     <button onclick="createCat()">Kategorie erstellen</button>
   \`;
   Object.keys(data).forEach(c=>{
-    catView.innerHTML += \`<div class="item"><button class="big" onclick="openCat('\${c}')">\${c}</button></div>\`;
+    notesView.innerHTML += \`
+      <div class="item">
+        <button class="big" onclick="openCategory('\${c}')">\${c}</button>
+      </div>
+    \`;
   });
 }
 
@@ -118,25 +130,27 @@ async function createCat(){
   const n = document.getElementById("newCat").value.trim();
   if(!n) return;
   await fetch("/cat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
-  loadCategories();
+  showCategories();
 }
 
-async function openCat(cat){
-  activeCategory = cat;
+async function openCategory(cat){
+  currentCategory = cat;
   const data = await fetch("/cat").then(r=>r.json());
   const notes = data[cat] || [];
-  catView.innerHTML = \`
-    <button onclick="loadCategories()">⬅ Zurück</button>
+
+  notesView.innerHTML = \`
+    <button onclick="showCategories()">⬅ Zurück</button>
     <h3>\${cat}</h3>
     <button class="big" onclick="newNote()">➕ Notiz erstellen</button>
   \`;
+
   notes.forEach((n,i)=>{
-    catView.innerHTML += \`
+    notesView.innerHTML += \`
       <div class="item">
         <div>\${n.text}</div>
         <div class="small">\${new Date(n.time).toLocaleString()}</div>
         <button onclick="editNote(\${i})">✏️</button>
-        <button onclick="delNote(\${i})">🗑</button>
+        <button onclick="deleteNote(\${i})">🗑</button>
       </div>
     \`;
   });
@@ -145,26 +159,27 @@ async function openCat(cat){
 function newNote(){
   const t = prompt("Notiz schreiben");
   if(!t) return;
-  fetch("/cat-note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCategory,text:t})})
-    .then(()=>openCat(activeCategory));
+  fetch("/cat-note",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:currentCategory,text:t})})
+    .then(()=>openCategory(currentCategory));
 }
 
 function editNote(i){
   fetch("/cat").then(r=>r.json()).then(data=>{
-    const old = data[activeCategory][i].text;
+    const old = data[currentCategory][i].text;
     const t = prompt("Notiz bearbeiten", old);
     if(t===null) return;
-    fetch("/cat-note-edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCategory,index:i,text:t})})
-      .then(()=>openCat(activeCategory));
+    fetch("/cat-note-edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:currentCategory,index:i,text:t})})
+      .then(()=>openCategory(currentCategory));
   });
 }
 
-function delNote(i){
+function deleteNote(i){
   if(!confirm("Notiz löschen?")) return;
-  fetch("/cat-note-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCategory,index:i})})
-    .then(()=>openCat(activeCategory));
+  fetch("/cat-note-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:currentCategory,index:i})})
+    .then(()=>openCategory(currentCategory));
 }
 </script>
+
 </body>
 </html>`);
 });
@@ -194,15 +209,15 @@ app.post("/cat-note",(r,s)=>{
   write(CATEGORY_FILE,c);
   s.sendStatus(200);
 });
-app.post("/cat-note-del",(r,s)=>{
-  const c=read(CATEGORY_FILE,{});
-  c[r.body.cat].splice(r.body.index,1);
-  write(CATEGORY_FILE,c);
-  s.sendStatus(200);
-});
 app.post("/cat-note-edit",(r,s)=>{
   const c=read(CATEGORY_FILE,{});
   c[r.body.cat][r.body.index].text = r.body.text;
+  write(CATEGORY_FILE,c);
+  s.sendStatus(200);
+});
+app.post("/cat-note-del",(r,s)=>{
+  const c=read(CATEGORY_FILE,{});
+  c[r.body.cat].splice(r.body.index,1);
   write(CATEGORY_FILE,c);
   s.sendStatus(200);
 });
