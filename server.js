@@ -61,7 +61,7 @@ wss.on("connection", ws => {
   ws.on("message", async msg => {
     const m = JSON.parse(msg);
 
-    /* ---------- QUICK NOTES (conflict-safe) ---------- */
+    /* ---------- QUICK NOTES ---------- */
     if (m.type === "quick") {
       if (
         m.time > data.quickMeta.time ||
@@ -82,7 +82,6 @@ wss.on("connection", ws => {
       data.categories[m.name] = [];
       await saveData();
     }
-
     if (m.type === "delCat") {
       delete data.categories[m.cat];
       await saveData();
@@ -93,12 +92,10 @@ wss.on("connection", ws => {
       data.categories[m.cat].unshift(m.text);
       await saveData();
     }
-
     if (m.type === "editNote") {
       data.categories[m.cat][m.i] = m.text;
       await saveData();
     }
-
     if (m.type === "delNote") {
       data.categories[m.cat].splice(m.i, 1);
       await saveData();
@@ -106,7 +103,7 @@ wss.on("connection", ws => {
   });
 });
 
-/* ---------------- PWA FILES ---------------- */
+/* ---------------- PWA ---------------- */
 app.get("/manifest.json", (_, res) => {
   res.json({
     name: "Notes",
@@ -122,8 +119,8 @@ app.get("/manifest.json", (_, res) => {
 app.get("/sw.js", (_, res) => {
   res.set("Content-Type", "application/javascript");
   res.send(`
-self.addEventListener("install",e=>self.skipWaiting());
-self.addEventListener("fetch",()=>{});
+self.addEventListener("install", e => self.skipWaiting());
+self.addEventListener("fetch", () => {});
 `);
 });
 
@@ -136,15 +133,17 @@ res.send(`<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Notes</title>
 <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#121212">
 <style>
 body{margin:0;background:#121212;color:#eee;font-family:sans-serif;height:100vh}
-header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
+header{display:flex;gap:6px;padding:10px;background:#1e1e1e;flex-wrap:wrap}
 button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px}
 .tab{display:none;height:calc(100vh - 60px);padding:10px;overflow:auto}
 textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px}
-textarea.full{height:100%}
+textarea.full{height:calc(100vh - 60px)}
 .item{border-bottom:1px solid #333;padding:10px}
-.hidden{display:none}
+#login{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh}
+#login input,#login button{margin:10px 0;width:80%;max-width:300px}
 </style>
 </head>
 <body>
@@ -160,6 +159,7 @@ textarea.full{height:100%}
 <button onclick="show('quick')">Quick</button>
 <button onclick="show('notes')">Notizen</button>
 <button onclick="show('history')">History</button>
+<input id="search" placeholder="Suche..." oninput="render()">
 </header>
 
 <div id="quick" class="tab">
@@ -171,26 +171,30 @@ textarea.full{height:100%}
 
 <script>
 if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js");}
+const clientId=Math.random().toString(36).slice(2);
+let ws,data={},activeCat=null;
 
-const clientId = Math.random().toString(36).slice(2);
-let ws, data={}, activeCat=null;
-
-const qt = document.getElementById("quickText");
-const view = document.getElementById("view");
+const qt=document.getElementById("quickText");
+const view=document.getElementById("view");
+const loginBox=document.getElementById("login");
+const top=document.getElementById("top");
+const pw=document.getElementById("pw");
+const err=document.getElementById("err");
+const search=document.getElementById("search");
 
 function login(){
-  if(pw.value === "${PASSWORD}"){
+  if(pw.value==="${PASSWORD}"){
     loginBox.style.display="none";
     top.classList.remove("hidden");
     connect();
     show("quick");
-  } else err.innerText="Falsch";
+  }else err.innerText="Falsches Passwort";
 }
 
 function connect(){
-  ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
+  ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
+  ws.onmessage=e=>{
+    const m=JSON.parse(e.data);
     if(m.type==="sync"){data=m.data; render();}
   };
 }
@@ -204,66 +208,40 @@ function show(id){
 function render(){
   if(quick.style.display==="block") qt.value=data.quickNote||"";
   if(history.style.display==="block")
-    history.innerHTML=data.history.map(x=>"<div class=item>"+x+"</div>").join("");
-  if(notes.style.display==="block") renderCats();
+    history.innerHTML=(data.history||[]).map(x=>"<div class=item>"+x+"</div>").join("");
+  if(notes.style.display==="block") activeCat?openCat(activeCat):renderCats();
 }
 
-/* ---------- QUICK ---------- */
-qt.oninput = () => ws.send(JSON.stringify({
-  type:"quick",
-  text:qt.value,
-  client:clientId,
-  time:Date.now()
-}));
+/* Quick Notes */
+qt.oninput=()=>ws.send(JSON.stringify({type:"quick",text:qt.value,client:clientId,time:Date.now()}));
 
-/* ---------- CATEGORIES ---------- */
+/* Categories */
 function renderCats(){
   view.innerHTML='<input id="nc" placeholder="Neue Kategorie"><button onclick="addCat()">+</button>';
   Object.keys(data.categories||{}).forEach(c=>{
-    view.innerHTML+=\`<div class=item>
-      <button onclick="openCat('\${c}')">\${c}</button>
-      <button onclick="delCat('\${c}')">🗑</button>
-    </div>\`;
+    view.innerHTML+=\`<div class=item><button onclick="openCat('\${c}')">\${c}</button>
+    <button onclick="delCat('\${c}')">🗑</button></div>\`;
   });
 }
+function addCat(){ws.send(JSON.stringify({type:"addCat",name:nc.value.trim()}))}
+function delCat(c){ws.send(JSON.stringify({type:"delCat",cat:c}))}
 
-function addCat(){
-  ws.send(JSON.stringify({type:"addCat",name:nc.value.trim()}));
-}
-
-function delCat(c){
-  ws.send(JSON.stringify({type:"delCat",cat:c}));
-}
-
-/* ---------- NOTES ---------- */
+/* Notes */
 function openCat(c){
   activeCat=c;
-  view.innerHTML=\`<button onclick="renderCats()">⬅</button><h3>\${c}</h3>
-  <button onclick="addNote()">➕</button>\`;
+  view.innerHTML=\`<button onclick="renderCats()">⬅</button><h3>\${c}</h3><button onclick="addNote()">➕</button>\`;
   data.categories[c].forEach((n,i)=>{
-    view.innerHTML+=\`
-    <div class=item>
-      <textarea oninput="editNote(\${i},this.value)">\${n}</textarea>
-      <button onclick="delNote(\${i})">🗑</button>
-    </div>\`;
+    view.innerHTML+=\`<div class=item><textarea oninput="editNote(\${i},this.value)">\${n}</textarea>
+    <button onclick="delNote(\${i})">🗑</button></div>\`;
   });
 }
-
-function addNote(){
-  ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""}));
-}
-function editNote(i,t){
-  ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t}));
-}
-function delNote(i){
-  ws.send(JSON.stringify({type:"delNote",cat:activeCat,i}));
-}
+function addNote(){ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""}))}
+function editNote(i,t){ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t}))}
+function delNote(i){ws.send(JSON.stringify({type:"delNote",cat:activeCat,i}))}
 </script>
 </body>
 </html>`);
 });
 
 /* ---------------- START ---------------- */
-loadData().then(() => {
-  server.listen(PORT, () => console.log("Server läuft stabil"));
-});
+loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
