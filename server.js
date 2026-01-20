@@ -1,7 +1,7 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const fetch = require("node-fetch");
+const fetch = require("node-fetch"); // node-fetch@2, CommonJS
 
 const app = express();
 const server = http.createServer(app);
@@ -19,9 +19,10 @@ const HEADERS = {
   Accept: "application/vnd.github+json"
 };
 
+// ---------------- Daten ----------------
 let data = { quickNote:"", quickMeta:{client:"",time:0}, history:[], categories:{} };
 
-/* ---------------- GIST ---------------- */
+// ---------------- GIST ----------------
 async function loadData() {
   try {
     const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
@@ -42,7 +43,7 @@ async function saveData() {
   broadcast();
 }
 
-/* ---------------- WEBSOCKET ---------------- */
+// ---------------- WebSocket ----------------
 function broadcast() {
   const msg = JSON.stringify({ type:"sync", data });
   wss.clients.forEach(c => { if(c.readyState===1) c.send(msg); });
@@ -93,7 +94,7 @@ wss.on("connection", ws => {
   });
 });
 
-/* ---------------- PWA ---------------- */
+// ---------------- PWA ----------------
 app.get("/manifest.json", (_,res)=>res.json({
   name:"Notes",
   short_name:"Notes",
@@ -112,7 +113,7 @@ self.addEventListener("fetch",()=>{});
 `);
 });
 
-/* ---------------- UI ---------------- */
+// ---------------- UI ----------------
 app.get("/", (_,res)=>{
 res.send(`<!DOCTYPE html>
 <html lang="de">
@@ -230,10 +231,11 @@ function openCat(c){
 function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""})); }
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
+
 </script>
 </body>
 </html>`);
 });
 
-/* ---------------- START ---------------- */
+// ---------------- START ----------------
 loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
