@@ -10,7 +10,6 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3001;
 const TOKEN = process.env.GITHUB_TOKEN;
 const GIST_ID = process.env.GIST_ID;
-const PASSWORD = process.env.PASSWORD || "1234";
 
 app.use(express.json());
 
@@ -131,24 +130,11 @@ button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:
 textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px;font-size:16px}
 textarea.full{height:calc(100vh - 60px)}
 .item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-#login{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;z-index:9999}
-#login input,#login button{margin:10px 0;width:80%;max-width:300px;font-size:18px;padding:10px}
 </style>
 </head>
 <body>
 
-<!-- LOGIN -->
-<div id="login">
-<h3>Passwort eingeben</h3>
-<div style="position:relative;width:80%;max-width:300px;">
-<input id="pw" type="password" placeholder="Passwort" style="width:100%;padding-right:40px">
-<button id="togglePw" style="position:absolute;right:0;top:0;height:100%;width:40px">👁</button>
-</div>
-<button id="loginBtn">Login</button>
-<p id="err"></p>
-</div>
-
-<header id="top" style="display:none">
+<header id="top">
 <button onclick="show('quick')">Quick</button>
 <button onclick="show('notes')">Notizen</button>
 <button onclick="show('history')">History</button>
@@ -170,27 +156,6 @@ let ws, activeCat = null, data = {quickNote:"",history:[],categories:{}};
 
 const qt = document.getElementById("quickText");
 const view = document.getElementById("view");
-const loginBox = document.getElementById("login");
-const topBar = document.getElementById("top");
-const pwInput = document.getElementById("pw");
-const togglePw = document.getElementById("togglePw");
-const errMsg = document.getElementById("err");
-const loginBtn = document.getElementById("loginBtn");
-
-togglePw.addEventListener("click", ()=>{
-  pwInput.type = pwInput.type==="password"?"text":"password";
-});
-
-loginBtn.addEventListener("click", ()=>{
-  if(pwInput.value === "${PASSWORD}"){
-    loginBox.style.display="none";
-    topBar.style.display="flex";
-    connect();
-    show('quick');
-  } else {
-    errMsg.innerText="Falsches Passwort";
-  }
-});
 
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
@@ -241,6 +206,10 @@ function openCat(c){
 function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""})); }
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
+
+// Start direkt ohne Login
+connect();
+show('quick');
 </script>
 </body>
 </html>`);
