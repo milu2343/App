@@ -137,9 +137,13 @@ textarea.full{height:calc(100vh - 60px)}
 </head>
 <body>
 
+<!-- LOGIN -->
 <div id="login">
 <h3>Passwort eingeben</h3>
-<input id="pw" type="password" placeholder="Passwort">
+<div style="position:relative;width:80%;max-width:300px;">
+<input id="pw" type="password" placeholder="Passwort" style="width:100%;padding-right:40px">
+<button id="togglePw" style="position:absolute;right:0;top:0;height:100%;width:40px">👁</button>
+</div>
 <button id="loginBtn">Login</button>
 <p id="err"></p>
 </div>
@@ -169,11 +173,16 @@ const view = document.getElementById("view");
 const loginBox = document.getElementById("login");
 const topBar = document.getElementById("top");
 const pwInput = document.getElementById("pw");
+const togglePw = document.getElementById("togglePw");
 const errMsg = document.getElementById("err");
 const loginBtn = document.getElementById("loginBtn");
 
-loginBtn.addEventListener("click", () => {
-  if(pwInput.value === "${PASSWORD}") {
+togglePw.addEventListener("click", ()=>{
+  pwInput.type = pwInput.type==="password"?"text":"password";
+});
+
+loginBtn.addEventListener("click", ()=>{
+  if(pwInput.value === "${PASSWORD}"){
     loginBox.style.display="none";
     topBar.style.display="flex";
     connect();
@@ -191,13 +200,13 @@ function show(id){
 
 function connect(){
   ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage = e => {
+  ws.onmessage = e=>{
     const m = JSON.parse(e.data);
     if(m.type==="sync"){ data = m.data; render(); }
   };
 }
 
-qt.oninput = () => ws.send(JSON.stringify({type:"quick",text:qt.value,client:clientId,time:Date.now()}));
+qt.oninput = ()=> ws.send(JSON.stringify({type:"quick",text:qt.value,client:clientId,time:Date.now()}));
 
 function render(){
   if(document.getElementById("quick").style.display==="block") qt.value = data.quickNote || "";
@@ -232,7 +241,6 @@ function openCat(c){
 function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""})); }
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
-
 </script>
 </body>
 </html>`);
@@ -240,3 +248,4 @@ function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); 
 
 // ---------------- START ----------------
 loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
+
