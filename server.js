@@ -171,16 +171,25 @@ const loginBox = document.getElementById("login");
 const top = document.getElementById("top");
 const pw = document.getElementById("pw");
 const err = document.getElementById("err");
-const loginBtn = document.getElementById("loginBtn");
+document.addEventListener("DOMContentLoaded", () => {
+  const loginBtn = document.getElementById("loginBtn");
+  const pw = document.getElementById("pw");
+  const loginBox = document.getElementById("login");
+  const top = document.getElementById("top");
+  const err = document.getElementById("err");
 
-loginBtn.addEventListener("click", ()=>{
-  if(pw.value === "${PASSWORD}"){
-    loginBox.style.display="none";
-    top.classList.remove("hidden");
-    connect();
-    show('quick');
-  } else err.innerText = "Falsches Passwort";
+  loginBtn.addEventListener("click", () => {
+    if (pw.value === "${PASSWORD}") {
+      loginBox.style.display = "none";
+      top.classList.remove("hidden");
+      connect();
+      show('quick');
+    } else {
+      err.innerText = "Falsches Passwort";
+    }
+  });
 });
+
 
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
