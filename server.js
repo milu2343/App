@@ -1,7 +1,7 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const fetch = require("node-fetch"); // node-fetch@2 für CommonJS
+const fetch = require("node-fetch");
 
 const app = express();
 const server = http.createServer(app);
@@ -54,7 +54,6 @@ wss.on("connection", ws => {
   ws.on("message", async msg=>{
     const m = JSON.parse(msg);
 
-    // Quick Notes
     if(m.type==="quick"){
       if(m.time>data.quickMeta.time || (m.time===data.quickMeta.time && m.client!==data.quickMeta.client)){
         if(data.quickNote && data.quickNote!==m.text){
@@ -67,7 +66,6 @@ wss.on("connection", ws => {
       }
     }
 
-    // Categories
     if(m.type==="addCat" && !data.categories[m.name]){
       data.categories[m.name]=[];
       await saveData();
@@ -77,7 +75,6 @@ wss.on("connection", ws => {
       await saveData();
     }
 
-    // Notes
     if(m.type==="addNote"){
       data.categories[m.cat].unshift(m.text);
       await saveData();
@@ -107,14 +104,17 @@ app.get("/manifest.json", (_,res)=>res.json({
 app.get("/sw.js", (_,res)=>{
   res.set("Content-Type","application/javascript");
   res.send(`
-self.addEventListener("install",e=>self.skipWaiting());
-self.addEventListener("fetch",()=>{});
+self.addEventListener("install", e => self.skipWaiting());
+self.addEventListener("fetch", () => {});
 `);
 });
 
+// ---------------- API für Polling ----------------
+app.get("/data", (_,res)=>res.json(data));
+
 // ---------------- UI ----------------
 app.get("/", (_,res)=>{
-  res.send(`<!DOCTYPE html>
+res.send(`<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
@@ -172,14 +172,29 @@ function show(id){
   render();
 }
 
+// --------- WebSocket + Polling ---------
 function connect(){
   ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
   ws.onmessage = e=>{
     const m = JSON.parse(e.data);
     if(m.type==="sync"){ data = m.data; render(); }
   };
+  ws.onclose = ()=>{
+    console.log("WS getrennt, starte Polling fallback");
+    setInterval(fetchData,2000);
+  };
 }
 
+// Fallback Polling
+async function fetchData(){
+  try{
+    const r = await fetch("/data");
+    const d = await r.json();
+    data = d; render();
+  }catch(e){ console.error("Polling Fehler:",e); }
+}
+
+// --------- Rendering ---------
 qt.oninput = ()=> ws.send(JSON.stringify({type:"quick",text:qt.value,client:clientId,time:Date.now()}));
 
 function render(){
@@ -216,7 +231,7 @@ function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
 
-// Start direkt
+// Start
 connect();
 show('quick');
 </script>
