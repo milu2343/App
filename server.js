@@ -15,12 +15,14 @@ const HEADERS = {
   Accept: "application/vnd.github+json"
 };
 
+// Load data from Gist
 async function loadData() {
   const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
-  const j = await res.json();
-  return JSON.parse(j.files["notes.json"].content);
+  const gist = await res.json();
+  return JSON.parse(gist.files["notes.json"].content);
 }
 
+// Save data to Gist
 async function saveData(d) {
   await fetch(`https://api.github.com/gists/${GIST_ID}`, {
     method: "PATCH",
