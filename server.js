@@ -50,8 +50,9 @@ textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;pa
 <!-- QUICK NOTES -->
 <div id="quick" class="tab">
   <button onclick="copy()">Copy</button>
-  <button onclick="paste()">Paste</button>
-  <textarea id="quickText" placeholder="Quick Note..."></textarea>
+<button onclick="paste()">Paste</button>
+<button onclick="clearQuick()">Clear</button>
+<textarea id="quickText" placeholder="Quick Note..."></textarea>
 </div>
 
 <!-- NOTIZEN -->
@@ -97,6 +98,25 @@ quick.addEventListener("input", ()=>{
 
 function copy(){navigator.clipboard.writeText(quick.value)}
 async function paste(){quick.value += await navigator.clipboard.readText()}
+function clearQuick(){
+  if(!quick.value.trim()) return;
+
+  // In History speichern
+  fetch("/history",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text:quick.value})
+  });
+
+  quick.value = "";
+  lastText = "";
+
+  fetch("/note",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text:""})
+  });
+}
 
 /* ---------- HISTORY ---------- */
 async function loadHistory(){
