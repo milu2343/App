@@ -54,7 +54,6 @@ wss.on("connection", ws => {
   ws.on("message", async msg => {
     const m = JSON.parse(msg);
 
-    // Quick Notes
     if (m.type === "quick") {
       if (m.time > data.quickMeta.time || (m.time === data.quickMeta.time && m.client !== data.quickMeta.client)) {
         if (data.quickNote && data.quickNote !== m.text) {
@@ -67,7 +66,6 @@ wss.on("connection", ws => {
       }
     }
 
-    // Categories
     if (m.type === "addCat" && !data.categories[m.name]) {
       data.categories[m.name] = [];
       await saveData();
@@ -77,7 +75,6 @@ wss.on("connection", ws => {
       await saveData();
     }
 
-    // Notes
     if (m.type === "addNote") {
       data.categories[m.cat].unshift(m.text);
       await saveData();
@@ -135,9 +132,9 @@ textarea.full{height:calc(100vh - 60px)}
 <body>
 
 <header id="top">
-<button onclick="show('quick')">Quick</button>
-<button onclick="show('notes')">Notizen</button>
-<button onclick="show('history')">History</button>
+<button id="btnQuick">Quick</button>
+<button id="btnNotes">Notizen</button>
+<button id="btnHistory">History</button>
 <input id="search" placeholder="Suche..." oninput="render()">
 </header>
 
@@ -156,6 +153,15 @@ let ws, activeCat = null, data = {quickNote:"",history:[],categories:{}};
 
 const qt = document.getElementById("quickText");
 const view = document.getElementById("view");
+const historyDiv = document.getElementById("history");
+
+const btnQuick = document.getElementById("btnQuick");
+const btnNotes = document.getElementById("btnNotes");
+const btnHistory = document.getElementById("btnHistory");
+
+btnQuick.onclick = ()=>show('quick');
+btnNotes.onclick = ()=>show('notes');
+btnHistory.onclick = ()=>show('history');
 
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
@@ -176,7 +182,7 @@ qt.oninput = ()=> ws.send(JSON.stringify({type:"quick",text:qt.value,client:clie
 function render(){
   if(document.getElementById("quick").style.display==="block") qt.value = data.quickNote || "";
   if(document.getElementById("history").style.display==="block")
-    history.innerHTML = (data.history||[]).map(x=>"<div class='item'>"+x+"</div>").join("");
+    historyDiv.innerHTML = (data.history||[]).map(x=>"<div class='item'>"+x+"</div>").join("");
   if(document.getElementById("notes").style.display==="block")
     activeCat ? openCat(activeCat) : renderCats();
 }
@@ -207,7 +213,7 @@ function addNote(){ ws.send(JSON.stringify({type:"addNote",cat:activeCat,text:""
 function editNote(i,t){ ws.send(JSON.stringify({type:"editNote",cat:activeCat,i,text:t})); }
 function delNote(i){ ws.send(JSON.stringify({type:"delNote",cat:activeCat,i})); }
 
-// Start direkt ohne Login
+// Start direkt
 connect();
 show('quick');
 </script>
