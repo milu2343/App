@@ -1,7 +1,7 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const fetch = require("node-fetch"); // node-fetch@2, CommonJS
+const fetch = require("node-fetch"); // node-fetch@2 für CommonJS
 
 const app = express();
 const server = http.createServer(app);
@@ -19,98 +19,101 @@ const HEADERS = {
 };
 
 // ---------------- Daten ----------------
-let data = { quickNote: "", quickMeta: { client: "", time: 0 }, history: [], categories: {} };
+let data = { quickNote:"", quickMeta:{client:"",time:0}, history:[], categories:{} };
 
-// ---------------- GIST ----------------
+// ---------------- Gist Load/Save ----------------
 async function loadData() {
   try {
     const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
     const g = await r.json();
-    if (g.files && g.files["notes.json"] && g.files["notes.json"].content)
+    if(g.files && g.files["notes.json"] && g.files["notes.json"].content)
       data = JSON.parse(g.files["notes.json"].content);
-  } catch (err) { console.error("Gist load error:", err); }
+  } catch(e){ console.error("Gist load error:", e); }
 }
 
 async function saveData() {
   try {
     await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method: "PATCH",
-      headers: { ...HEADERS, "Content-Type": "application/json" },
-      body: JSON.stringify({ files: { "notes.json": { content: JSON.stringify(data, null, 2) } } })
+      method:"PATCH",
+      headers:{ ...HEADERS, "Content-Type":"application/json" },
+      body: JSON.stringify({ files: { "notes.json": { content: JSON.stringify(data,null,2) } } })
     });
-  } catch (err) { console.error("Gist save error:", err); }
+  } catch(e){ console.error("Gist save error:", e); }
   broadcast();
 }
 
 // ---------------- WebSocket ----------------
 function broadcast() {
-  const msg = JSON.stringify({ type: "sync", data });
-  wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+  const msg = JSON.stringify({ type:"sync", data });
+  wss.clients.forEach(c=>{ if(c.readyState===1) c.send(msg); });
 }
 
 wss.on("connection", ws => {
-  ws.send(JSON.stringify({ type: "sync", data }));
+  ws.send(JSON.stringify({ type:"sync", data }));
 
-  ws.on("message", async msg => {
+  ws.on("message", async msg=>{
     const m = JSON.parse(msg);
 
-    if (m.type === "quick") {
-      if (m.time > data.quickMeta.time || (m.time === data.quickMeta.time && m.client !== data.quickMeta.client)) {
-        if (data.quickNote && data.quickNote !== m.text) {
+    // Quick Notes
+    if(m.type==="quick"){
+      if(m.time>data.quickMeta.time || (m.time===data.quickMeta.time && m.client!==data.quickMeta.client)){
+        if(data.quickNote && data.quickNote!==m.text){
           data.history.unshift(data.quickNote);
-          data.history = data.history.slice(0, 50);
+          data.history = data.history.slice(0,50);
         }
         data.quickNote = m.text;
-        data.quickMeta = { client: m.client, time: m.time };
+        data.quickMeta = { client:m.client, time:m.time };
         await saveData();
       }
     }
 
-    if (m.type === "addCat" && !data.categories[m.name]) {
-      data.categories[m.name] = [];
+    // Categories
+    if(m.type==="addCat" && !data.categories[m.name]){
+      data.categories[m.name]=[];
       await saveData();
     }
-    if (m.type === "delCat") {
+    if(m.type==="delCat"){
       delete data.categories[m.cat];
       await saveData();
     }
 
-    if (m.type === "addNote") {
+    // Notes
+    if(m.type==="addNote"){
       data.categories[m.cat].unshift(m.text);
       await saveData();
     }
-    if (m.type === "editNote") {
-      data.categories[m.cat][m.i] = m.text;
+    if(m.type==="editNote"){
+      data.categories[m.cat][m.i]=m.text;
       await saveData();
     }
-    if (m.type === "delNote") {
-      data.categories[m.cat].splice(m.i, 1);
+    if(m.type==="delNote"){
+      data.categories[m.cat].splice(m.i,1);
       await saveData();
     }
   });
 });
 
 // ---------------- PWA ----------------
-app.get("/manifest.json", (_, res) => res.json({
-  name: "Notes",
-  short_name: "Notes",
-  start_url: "/",
-  display: "standalone",
-  background_color: "#121212",
-  theme_color: "#121212",
-  icons: []
+app.get("/manifest.json", (_,res)=>res.json({
+  name:"Notes",
+  short_name:"Notes",
+  start_url:"/",
+  display:"standalone",
+  background_color:"#121212",
+  theme_color:"#121212",
+  icons:[]
 }));
 
-app.get("/sw.js", (_, res) => {
-  res.set("Content-Type", "application/javascript");
+app.get("/sw.js", (_,res)=>{
+  res.set("Content-Type","application/javascript");
   res.send(`
-self.addEventListener("install", e => self.skipWaiting());
-self.addEventListener("fetch", () => {});
+self.addEventListener("install",e=>self.skipWaiting());
+self.addEventListener("fetch",()=>{});
 `);
 });
 
 // ---------------- UI ----------------
-app.get("/", (_, res) => {
+app.get("/", (_,res)=>{
   res.send(`<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -223,4 +226,3 @@ show('quick');
 
 // ---------------- START ----------------
 loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
-
