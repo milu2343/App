@@ -208,5 +208,11 @@ app.post("/cat-note-del",(r,s)=>{
   write(CATEGORY_FILE,c);
   s.sendStatus(200);
 });
+app.post("/history",(r,s)=>{
+  const h = read(HISTORY_FILE,[]);
+  h.unshift({text:r.body.text,time:Date.now()});
+  write(HISTORY_FILE,h.slice(0,50));
+  s.sendStatus(200);
+});
 
 app.listen(PORT,()=>console.log("Server läuft auf Port",PORT));
