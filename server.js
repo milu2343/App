@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
@@ -13,85 +14,89 @@ const GIST_ID = process.env.GIST_ID;
 
 app.use(express.json());
 
+// ----------- Headers für GitHub Gist -----------
 const HEADERS = {
   Authorization: `Bearer ${TOKEN}`,
   Accept: "application/vnd.github+json"
 };
 
-// ---------------- Daten ----------------
-let data = { quickNote:"", history:[], categories:{} };
+// ----------- Daten -----------
+let data = { quickNote: "", history: [], categories: {} };
 
-// ---------------- Gist ----------------
+// ----------- Gist-Funktionen -----------
 async function loadData() {
   try {
-    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
-    const g = await r.json();
-    if (g.files && g.files["notes.json"] && g.files["notes.json"].content) {
-      data = JSON.parse(g.files["notes.json"].content);
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
+    const gist = await res.json();
+    if (gist.files && gist.files["notes.json"] && gist.files["notes.json"].content) {
+      data = JSON.parse(gist.files["notes.json"].content);
     }
-  } catch(e){ console.error("Fehler beim Laden der Daten:", e); }
+  } catch (e) { console.error("Gist load error:", e); }
 }
 
 async function saveData() {
   try {
     await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method:"PATCH",
-      headers:{ ...HEADERS, "Content-Type":"application/json" },
-      body: JSON.stringify({ files:{ "notes.json":{ content: JSON.stringify(data,null,2) } } })
+      method: "PATCH",
+      headers: { ...HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({ files: { "notes.json": { content: JSON.stringify(data, null, 2) } } })
     });
-  } catch(e){ console.error("Fehler beim Speichern:", e); }
+  } catch (e) { console.error("Gist save error:", e); }
   broadcast();
 }
 
-// ---------------- WebSocket ----------------
+// ----------- WebSocket Live Sync -----------
 function broadcast() {
-  const msg = JSON.stringify({ type:"sync", data });
-  wss.clients.forEach(c => { if(c.readyState===1) c.send(msg); });
+  const msg = JSON.stringify({ type: "sync", data });
+  wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
 }
 
 wss.on("connection", ws => {
-  ws.send(JSON.stringify({ type:"sync", data }));
+  ws.send(JSON.stringify({ type: "sync", data }));
 
   ws.on("message", async message => {
     const m = JSON.parse(message);
 
-    if(m.type==="quick"){
-      if(data.quickNote!==m.text){
-        if(data.quickNote) {
+    // Quick Notes
+    if (m.type === "quick") {
+      if (data.quickNote !== m.text) {
+        if (data.quickNote) {
           data.history.unshift({ text: data.quickNote, time: Date.now() });
-          if(data.history.length>50) data.history = data.history.slice(0,50);
+          if (data.history.length > 50) data.history = data.history.slice(0, 50);
         }
         data.quickNote = m.text;
         await saveData();
       }
     }
 
-    if(m.type==="addCat" && !data.categories[m.name]){
-      data.categories = { [m.name]:[], ...data.categories }; // neue Kategorie oben
+    // Kategorien
+    if (m.type === "addCat" && !data.categories[m.name]) {
+      data.categories = { [m.name]: [], ...data.categories }; // neue Kategorie oben
       await saveData();
     }
-    if(m.type==="delCat"){
+    if (m.type === "delCat") {
       delete data.categories[m.cat];
       await saveData();
     }
 
-    if(m.type==="addNote"){
-      data.categories[m.cat].unshift({ text:m.text, time: Date.now() });
+    // Notizen
+    if (m.type === "addNote") {
+      data.categories[m.cat].unshift({ text: m.text, time: Date.now() });
       await saveData();
     }
-    if(m.type==="editNote"){
+    if (m.type === "editNote") {
       data.categories[m.cat][m.i].text = m.text;
       await saveData();
     }
-    if(m.type==="delNote"){
-      data.categories[m.cat].splice(m.i,1);
+    if (m.type === "delNote") {
+      data.categories[m.cat].splice(m.i, 1);
       await saveData();
     }
   });
 });
 
-// ---------------- UI ----------------
-app.get("/", (_,res)=>{
+// ----------- UI -----------
+app.get("/", (_, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -147,7 +152,7 @@ function show(id){
   render();
 }
 
-// ---------------- WebSocket ----------------
+// WebSocket verbinden
 function connect(){
   ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
   ws.onmessage = e=>{
@@ -157,7 +162,7 @@ function connect(){
 }
 connect();
 
-// ---------------- Render ----------------
+// Render Funktion
 function render(){
   if(tabs.quick.style.display==="block"){
     quickText.value = window.data.quickNote || "";
@@ -172,7 +177,7 @@ function render(){
 
 quickText.oninput = ()=>ws.send(JSON.stringify({ type:"quick", text:quickText.value, client:clientId }));
 
-// ---------------- Categories ----------------
+// Categories
 function renderCats(){
   view.innerHTML = '<input id="newCat" placeholder="Neue Kategorie"><button onclick="addCat()">Kategorie +</button>';
   Object.keys(window.data.categories||{}).forEach(c=>{
@@ -188,7 +193,7 @@ function addCat(){
 
 function delCat(c){ ws.send(JSON.stringify({ type:"delCat", cat:c })); }
 
-// ---------------- Notes ----------------
+// Notes
 function openCat(c){
   activeCat = c;
   const notes = window.data.categories[c] || [];
@@ -200,7 +205,8 @@ function openCat(c){
 }
 
 function newNote(){
-  activeCat && ws.send(JSON.stringify({ type:"addNote", cat:activeCat, text:"Neue Notiz" }));
+  if(!activeCat) return;
+  ws.send(JSON.stringify({ type:"addNote", cat:activeCat, text:"Neue Notiz" }));
 }
 
 function editNote(i,text){ ws.send(JSON.stringify({ type:"editNote", cat:activeCat, i, text })); }
@@ -208,12 +214,13 @@ function delNote(i){ ws.send(JSON.stringify({ type:"delNote", cat:activeCat, i }
 
 </script>
 </body>
-</html>
-`);
+</html>`);
 });
 
-// ---------------- API ----------------
-app.get("/data", async(_,res)=>res.json(data));
+// ----------- API -----------
 
-// ---------------- START ----------------
+app.get("/data", async (_, res)=>res.json(data));
+
+// ----------- Server starten -----------
+
 loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
