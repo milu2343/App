@@ -1,11 +1,15 @@
 {
-  "name": "quick-notes",
+  "name": "notes-app",
   "version": "1.0.0",
+  "description": "Quick Notes App mit Kategorien, History und Live Sync",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "node-fetch": "2.6.9",
+    "ws": "^8.13.0"
   }
 }
