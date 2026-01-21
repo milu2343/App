@@ -66,6 +66,21 @@ app.post("/del", (req, res) => {
   res.sendStatus(200);
 });
 
+// Download Backup
+app.get("/backup", (_, res) => {
+  res.setHeader("Content-Disposition", "attachment; filename=notes-backup.json");
+  res.json(data);
+});
+
+// Import Backup
+app.post("/restore", (req, res) => {
+  const d = req.body;
+  if (!d || !d.categories) return res.sendStatus(400);
+  data = d;
+  save();
+  res.sendStatus(200);
+});
+
 // ---------- UI ----------
 app.get("/", (_, res) => {
 res.send(`<!DOCTYPE html>
@@ -87,9 +102,12 @@ textarea.full{height:100%}
 <body>
 
 <header>
-<button onclick="show('quick')">Quick</button>
-<button onclick="show('notes')">Notizen</button>
-<button onclick="show('history')">History</button>
+  <button onclick="show('quick')">Quick</button>
+  <button onclick="show('notes')">Notizen</button>
+  <button onclick="show('history')">History</button>
+  <button onclick="download()">⬇ Backup</button>
+  <button onclick="pick()">⬆ Import</button>
+  <input id="file" type="file" accept="application/json" hidden>
 </header>
 
 <div id="quick" class="tab">
@@ -137,6 +155,27 @@ function addCat(){
   if(!c)return;
   fetch("/cat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:c})}).then(load);
 }
+
+function download(){
+  window.location = "/backup";
+}
+
+function pick(){
+  document.getElementById("file").click();
+}
+
+document.getElementById("file").onchange = async e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const text = await file.text();
+  const json = JSON.parse(text);
+  await fetch("/restore", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(json)
+  });
+  load();
+};
 
 function open(c){
   active=c;
