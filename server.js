@@ -2,50 +2,38 @@
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
-import fetch from "node-fetch";
+import fs from "fs";
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3001;
-const TOKEN = process.env.GITHUB_TOKEN;
-const GIST_ID = process.env.GIST_ID;
+const DATA_FILE = "./notes.json";
 
 app.use(express.json());
 
-// ----------- Headers für GitHub Gist -----------
-const HEADERS = {
-  Authorization: `Bearer ${TOKEN}`,
-  Accept: "application/vnd.github+json"
-};
-
-// ----------- Daten -----------
+// ---------- Daten ----------
 let data = { quickNote: "", history: [], categories: {} };
 
-// ----------- Gist-Funktionen -----------
-async function loadData() {
+// ---------- Laden / Speichern ----------
+function loadData() {
   try {
-    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: HEADERS });
-    const gist = await res.json();
-    if (gist.files && gist.files["notes.json"] && gist.files["notes.json"].content) {
-      data = JSON.parse(gist.files["notes.json"].content);
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE);
+      data = JSON.parse(raw);
     }
-  } catch (e) { console.error("Gist load error:", e); }
+  } catch (e) { console.error("Fehler beim Laden:", e); }
 }
 
-async function saveData() {
+function saveData() {
   try {
-    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method: "PATCH",
-      headers: { ...HEADERS, "Content-Type": "application/json" },
-      body: JSON.stringify({ files: { "notes.json": { content: JSON.stringify(data, null, 2) } } })
-    });
-  } catch (e) { console.error("Gist save error:", e); }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (e) { console.error("Fehler beim Speichern:", e); }
   broadcast();
 }
 
-// ----------- WebSocket Live Sync -----------
+// ---------- WebSocket Live-Sync ----------
 function broadcast() {
   const msg = JSON.stringify({ type: "sync", data });
   wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
@@ -54,8 +42,8 @@ function broadcast() {
 wss.on("connection", ws => {
   ws.send(JSON.stringify({ type: "sync", data }));
 
-  ws.on("message", async message => {
-    const m = JSON.parse(message);
+  ws.on("message", async msg => {
+    const m = JSON.parse(msg);
 
     // Quick Notes
     if (m.type === "quick") {
@@ -65,37 +53,37 @@ wss.on("connection", ws => {
           if (data.history.length > 50) data.history = data.history.slice(0, 50);
         }
         data.quickNote = m.text;
-        await saveData();
+        saveData();
       }
     }
 
     // Kategorien
     if (m.type === "addCat" && !data.categories[m.name]) {
       data.categories = { [m.name]: [], ...data.categories }; // neue Kategorie oben
-      await saveData();
+      saveData();
     }
     if (m.type === "delCat") {
       delete data.categories[m.cat];
-      await saveData();
+      saveData();
     }
 
     // Notizen
     if (m.type === "addNote") {
       data.categories[m.cat].unshift({ text: m.text, time: Date.now() });
-      await saveData();
+      saveData();
     }
     if (m.type === "editNote") {
       data.categories[m.cat][m.i].text = m.text;
-      await saveData();
+      saveData();
     }
     if (m.type === "delNote") {
       data.categories[m.cat].splice(m.i, 1);
-      await saveData();
+      saveData();
     }
   });
 });
 
-// ----------- UI -----------
+// ---------- UI ----------
 app.get("/", (_, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="de">
@@ -217,10 +205,9 @@ function delNote(i){ ws.send(JSON.stringify({ type:"delNote", cat:activeCat, i }
 </html>`);
 });
 
-// ----------- API -----------
-
+// ---------- API ----------
 app.get("/data", async (_, res)=>res.json(data));
 
-// ----------- Server starten -----------
-
-loadData().then(()=>server.listen(PORT,()=>console.log("Server läuft stabil")));
+// ---------- Server starten ----------
+loadData();
+server.listen(PORT,()=>console.log("Server läuft stabil"));
