@@ -1,0 +1,13 @@
+{
+  "posts": [
+    {
+      "id": 1,
+      "user": "max",
+      "text": "Meine erste öffentliche Notiz",
+      "time": 1710000000000,
+      "comments": [
+        { "user": "anna", "text": "Nice!" }
+      ]
+    }
+  ]
+}
