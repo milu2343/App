@@ -1,20 +1,36 @@
-const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
+import express from "express";
+import fs from "fs";
+import http from "http";
+import { WebSocketServer } from "ws";
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3001;
+const DATA_FILE = "./data.json";
 
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json());
 
+/* ---------- DATA ---------- */
 let data = {
-  quickNote: "",
+  quick: "",
   history: [],
   categories: {}
 };
+
+function loadData() {
+  if (fs.existsSync(DATA_FILE)) {
+    data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  } else {
+    saveData();
+  }
+}
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  broadcast();
+}
 
 /* ---------- LIVE SYNC ---------- */
 function broadcast() {
@@ -26,121 +42,124 @@ function broadcast() {
 
 wss.on("connection", ws => {
   ws.send(JSON.stringify({ type: "sync", data }));
+});
 
-  ws.on("message", msg => {
-    const m = JSON.parse(msg);
+/* ---------- API ---------- */
+app.get("/data", (_, res) => res.json(data));
 
-    if (m.type === "quick") data.quickNote = m.text;
+app.post("/quick", (req, res) => {
+  data.quick = req.body.text || "";
+  saveData();
+  res.sendStatus(200);
+});
 
-    if (m.type === "clear") {
-      const t = data.quickNote.trim();
-      if (t && data.history[0] !== t) {
-        data.history.unshift(t);
-        data.history = data.history.slice(0, 50);
-      }
-      data.quickNote = "";
-    }
+app.post("/clear", (_, res) => {
+  if (
+    data.quick &&
+    data.history[0] !== data.quick
+  ) {
+    data.history.unshift(data.quick);
+    data.history = data.history.slice(0, 50);
+  }
+  data.quick = "";
+  saveData();
+  res.sendStatus(200);
+});
 
-    if (m.type === "addCat" && !data.categories[m.name])
-      data.categories[m.name] = [];
+app.post("/history/delete", (req, res) => {
+  data.history.splice(req.body.i, 1);
+  saveData();
+  res.sendStatus(200);
+});
 
-    if (m.type === "delCat")
-      delete data.categories[m.name];
+app.post("/history/edit", (req, res) => {
+  data.quick = data.history[req.body.i];
+  saveData();
+  res.sendStatus(200);
+});
 
-    if (m.type === "renameCat") {
-      data.categories[m.newName] = data.categories[m.oldName];
-      delete data.categories[m.oldName];
-    }
+app.post("/cat/add", (req, res) => {
+  if (!data.categories[req.body.name]) {
+    data.categories = {
+      [req.body.name]: [],
+      ...data.categories
+    };
+    saveData();
+  }
+  res.sendStatus(200);
+});
 
-    if (m.type === "addNote")
-      data.categories[m.cat].unshift({ text: "", time: Date.now() });
+app.post("/cat/delete", (req, res) => {
+  delete data.categories[req.body.name];
+  saveData();
+  res.sendStatus(200);
+});
 
-    if (m.type === "editNote")
-      data.categories[m.cat][m.i].text = m.text;
-
-    if (m.type === "delNote")
-      data.categories[m.cat].splice(m.i, 1);
-
-    if (m.type === "useHistory")
-      data.quickNote = data.history[m.i];
-
-    if (m.type === "delHistory")
-      data.history.splice(m.i, 1);
-
-    broadcast();
+app.post("/note/add", (req, res) => {
+  data.categories[req.body.cat].unshift({
+    text: req.body.text,
+    time: Date.now()
   });
+  saveData();
+  res.sendStatus(200);
 });
 
-/* ---------- BACKUP ---------- */
-app.get("/backup", (_, res) => {
-  res.setHeader("Content-Disposition", "attachment; filename=notes-backup.json");
-  res.json(data);
-});
-
-app.post("/restore", (req, res) => {
-  if (!req.body || !req.body.categories) return res.sendStatus(400);
-  data = req.body;
-  broadcast();
+app.post("/note/delete", (req, res) => {
+  data.categories[req.body.cat].splice(req.body.i, 1);
+  saveData();
   res.sendStatus(200);
 });
 
 /* ---------- UI ---------- */
 app.get("/", (_, res) => {
-  res.send(`<!DOCTYPE html>
+res.send(`<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Notes</title>
 <style>
-body{margin:0;background:#121212;color:#eee;font-family:sans-serif;height:100vh}
-header{display:flex;gap:6px;padding:10px;background:#1e1e1e;flex-wrap:wrap}
+body{margin:0;background:#121212;color:#eee;font-family:sans-serif}
+header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
 button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px}
-.tab{display:none;height:calc(100vh - 60px);padding:10px;overflow:auto}
-textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;border-radius:6px;font-size:16px}
-textarea.full{height:100%}
-.item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-.small{color:#aaa;font-size:12px}
+.tab{display:none;padding:10px;height:calc(100vh - 60px);overflow:auto}
+textarea{width:100%;height:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px}
+.item{border-bottom:1px solid #333;padding:10px}
 </style>
 </head>
 <body>
 
 <header>
 <button onclick="show('quick')">Quick</button>
-<button onclick="show('notes')">Notizen</button>
+<button onclick="show('notes')">Kategorien</button>
 <button onclick="show('history')">History</button>
-<button onclick="download()">Backup ⬇</button>
-<button onclick="upload()">Restore ⬆</button>
 </header>
 
 <div id="quick" class="tab">
-<button onclick="copy()">Copy</button>
-<button onclick="paste()">Paste</button>
-<button onclick="clearQuick()">Clear</button>
-<textarea id="q" class="full"></textarea>
+<button onclick="clearQuick()">Clear → History</button>
+<textarea id="q"></textarea>
 </div>
 
-<div id="notes" class="tab"><div id="view"></div></div>
+<div id="notes" class="tab">
+<input id="newCat" placeholder="Neue Kategorie">
+<button onclick="addCat()">+</button>
+<div id="cats"></div>
+</div>
+
 <div id="history" class="tab"></div>
 
-<input type="file" id="file" style="display:none">
-
 <script>
-let ws, activeCat=null;
-const q=document.getElementById("q");
-const view=document.getElementById("view");
-const file=document.getElementById("file");
+let ws, state = {}, activeCat = null;
+const q = document.getElementById("q");
 
 function connect(){
-  ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage=e=>{
-    const m=JSON.parse(e.data);
-    if(m.type==="sync"){window.data=m.data;render();}
+  ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
+  ws.onmessage = e => {
+    state = JSON.parse(e.data).data;
+    render();
   };
 }
 connect();
-
-function send(o){ws.send(JSON.stringify(o));}
 
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
@@ -149,81 +168,72 @@ function show(id){
 }
 show("quick");
 
-function render(){
-  if(!window.data) return;
+q.oninput = () =>
+  fetch("/quick",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:q.value})});
 
-  if(quick.style.display==="block") q.value=window.data.quickNote||"";
-
-  if(history.style.display==="block"){
-    history.innerHTML="";
-    window.data.history.forEach((h,i)=>{
-      history.innerHTML+=\`
-        <div class="item">\${h}
-          <button onclick="send({type:'useHistory',i:\${i}})">✏</button>
-          <button onclick="send({type:'delHistory',i:\${i}})">🗑</button>
-        </div>\`;
-    });
-  }
-
-  if(notes.style.display==="block"){
-    if(!activeCat){
-      view.innerHTML='<input id="nc" placeholder="Neue Kategorie"><button onclick="addCat()">+</button>';
-      Object.keys(window.data.categories).forEach(c=>{
-        view.innerHTML+=\`
-          <div class="item">
-            <button onclick="openCat('\${c}')">\${c}</button>
-            <button onclick="renameCat('\${c}')">✏</button>
-            <button onclick="send({type:'delCat',name:'\${c}'})">🗑</button>
-          </div>\`;
-      });
-    } else openCat(activeCat);
-  }
+function clearQuick(){
+  fetch("/clear",{method:"POST"});
 }
 
-q.oninput=()=>send({type:"quick",text:q.value});
-function clearQuick(){send({type:"clear"});q.value="";}
-function copy(){navigator.clipboard.writeText(q.value)}
-async function paste(){q.value+=await navigator.clipboard.readText();send({type:"quick",text:q.value})}
+function render(){
+  q.value = state.quick || "";
+
+  document.getElementById("history").innerHTML =
+    (state.history||[]).map((h,i)=>
+      \`<div class="item">
+        \${h}
+        <button onclick="editHist(\${i})">✏️</button>
+        <button onclick="delHist(\${i})">🗑</button>
+      </div>\`).join("");
+
+  document.getElementById("cats").innerHTML =
+    Object.keys(state.categories||{}).map(c=>
+      \`<div class="item">
+        <button onclick="openCat('\${c}')">\${c}</button>
+        <button onclick="delCat('\${c}')">🗑</button>
+      </div>\`).join("");
+}
+
+function editHist(i){
+  fetch("/history/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
+}
+
+function delHist(i){
+  fetch("/history/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
+}
 
 function addCat(){
-  const v=document.getElementById("nc").value.trim();
-  if(v) send({type:"addCat",name:v});
+  const v=document.getElementById("newCat").value.trim();
+  if(v) fetch("/cat/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:v})});
 }
-function renameCat(c){
-  const n=prompt("Neuer Name",c);
-  if(n) send({type:"renameCat",oldName:c,newName:n});
+
+function delCat(n){
+  fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
 }
 
 function openCat(c){
   activeCat=c;
-  view.innerHTML=\`<button onclick="activeCat=null;render()">⬅</button><h3>\${c}</h3><button onclick="send({type:'addNote',cat:'\${c}'})">➕</button>\`;
-  window.data.categories[c].forEach((n,i)=>{
-    view.innerHTML+=\`
-      <div class="item">
-        <textarea oninput="send({type:'editNote',cat:'\${c}',i:\${i},text:this.value})">\${n.text}</textarea>
-        <div class="small">\${new Date(n.time).toLocaleString()}</div>
-        <button onclick="send({type:'delNote',cat:'\${c}',i:\${i}})">🗑</button>
-      </div>\`;
-  });
+  document.getElementById("cats").innerHTML =
+    state.categories[c].map((n,i)=>
+      \`<div class="item">\${n.text}
+        <button onclick="delNote(\${i})">🗑</button>
+      </div>\`).join("") +
+    '<textarea id="newNote"></textarea><button onclick="addNote()">+</button>';
 }
 
-/* BACKUP UI */
-function download(){ location.href="/backup"; }
-
-function upload(){
-  file.click();
+function addNote(){
+  const t=document.getElementById("newNote").value;
+  if(t) fetch("/note/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})});
 }
 
-file.onchange=()=>{
-  const r=new FileReader();
-  r.onload=()=>{
-    fetch("/restore",{method:"POST",headers:{"Content-Type":"application/json"},body:r.result});
-  };
-  r.readAsText(file.files[0]);
-};
+function delNote(i){
+  fetch("/note/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})});
+}
 </script>
 </body>
 </html>`);
 });
 
-server.listen(PORT,()=>console.log("Server läuft"));
+/* ---------- START ---------- */
+loadData();
+server.listen(PORT, () => console.log("Server läuft stabil"));
