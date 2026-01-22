@@ -2,321 +2,256 @@ import express from "express";
 import fs from "fs";
 import http from "http";
 import { WebSocketServer } from "ws";
+import crypto from "crypto";
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const PORT = process.env.PORT || 3001;
-const DATA_FILE = "./data.json";
+const PORT = 3001;
+const FILE = "./data2.json";
 
 app.use(express.json());
 
-/* ---------- DATA ---------- */
-let data = {
-  quick: "",
-  history: [],
-  categories: {},
-  feed: []
+/* ================= DATA ================= */
+let data = { users:{}, feed:[] };
+const sessions = {};
+
+const emptyUser = ()=>({ quick:"", history:[], categories:{} });
+
+const save=()=>{
+  fs.writeFileSync(FILE,JSON.stringify(data,null,2));
+  broadcast();
+};
+if(fs.existsSync(FILE)) data=JSON.parse(fs.readFileSync(FILE));
+
+/* ================= WS ================= */
+const broadcast=()=>{
+  const msg=JSON.stringify({data});
+  wss.clients.forEach(c=>c.readyState===1&&c.send(msg));
+};
+wss.on("connection",ws=>ws.send(JSON.stringify({data})));
+
+/* ================= AUTH ================= */
+const auth=(req,res,next)=>{
+  const s=req.headers["x-session"];
+  if(!s||!sessions[s]) return res.sendStatus(401);
+  req.user=sessions[s];
+  next();
 };
 
-function loadData() {
-  if (fs.existsSync(DATA_FILE)) {
-    data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-  } else {
-    saveData();
+app.post("/register",(r,s)=>{
+  const {u,p}=r.body;
+  if(!u||!p||data.users[u])return s.sendStatus(400);
+  data.users[u]={pass:p,data:emptyUser()};
+  save(); s.sendStatus(200);
+});
+
+app.post("/login",(r,s)=>{
+  const {u,p}=r.body;
+  if(!data.users[u]||data.users[u].pass!==p) return s.sendStatus(401);
+  const sid=crypto.randomUUID();
+  sessions[sid]=u;
+  s.json({sid});
+});
+
+/* ================= NOTES (SERVER 1 LOGIK) ================= */
+app.get("/data",auth,(r,s)=>s.json(data.users[r.user].data));
+
+app.post("/quick",auth,(r,s)=>{
+  data.users[r.user].data.quick=r.body.t||"";
+  save(); s.sendStatus(200);
+});
+
+app.post("/clear",auth,(r,s)=>{
+  const u=data.users[r.user].data;
+  if(u.quick&&u.history[0]!==u.quick){
+    u.history.unshift(u.quick);
+    u.history=u.history.slice(0,50);
   }
-}
-
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  broadcast();
-}
-
-/* ---------- LIVE SYNC ---------- */
-function broadcast() {
-  const msg = JSON.stringify({ type: "sync", data });
-  wss.clients.forEach(c => {
-    if (c.readyState === 1) c.send(msg);
-  });
-}
-
-wss.on("connection", ws => {
-  ws.send(JSON.stringify({ type: "sync", data }));
+  u.quick=""; save(); s.sendStatus(200);
 });
 
-/* ---------- API ---------- */
-app.get("/data", (_, res) => res.json(data));
-
-app.post("/quick", (req, res) => {
-  data.quick = req.body.text || "";
-  saveData();
-  res.sendStatus(200);
+app.post("/hist/del",auth,(r,s)=>{
+  data.users[r.user].data.history.splice(r.body.i,1);
+  save(); s.sendStatus(200);
 });
 
-app.post("/clear", (_, res) => {
-  if (data.quick && data.history[0] !== data.quick) {
-    data.history.unshift(data.quick);
-    data.history = data.history.slice(0, 50);
+app.post("/hist/edit",auth,(r,s)=>{
+  const u=data.users[r.user].data;
+  u.quick=u.history[r.body.i];
+  save(); s.sendStatus(200);
+});
+
+/* ===== Kategorien exakt wie gefordert ===== */
+app.post("/cat/add",auth,(r,s)=>{
+  const u=data.users[r.user].data;
+  if(!u.categories[r.body.n])
+    u.categories={ [r.body.n]:[], ...u.categories };
+  save(); s.sendStatus(200);
+});
+
+app.post("/cat/rename",auth,(r,s)=>{
+  const u=data.users[r.user].data;
+  const {o,n}=r.body;
+  if(u.categories[o]&&n){
+    u.categories={ [n]:u.categories[o], ...u.categories };
+    delete u.categories[o];
   }
-  data.quick = "";
-  saveData();
-  res.sendStatus(200);
+  save(); s.sendStatus(200);
 });
 
-app.post("/history/delete", (req, res) => {
-  data.history.splice(req.body.i, 1);
-  saveData();
-  res.sendStatus(200);
+app.post("/cat/del",auth,(r,s)=>{
+  delete data.users[r.user].data.categories[r.body.n];
+  save(); s.sendStatus(200);
 });
 
-app.post("/history/edit", (req, res) => {
-  data.quick = data.history[req.body.i];
-  saveData();
-  res.sendStatus(200);
+app.post("/note/add",auth,(r,s)=>{
+  data.users[r.user].data.categories[r.body.c]
+    .unshift({t:r.body.t,time:Date.now()});
+  save(); s.sendStatus(200);
 });
 
-app.post("/cat/add", (req, res) => {
-  if (!data.categories[req.body.name]) {
-    data.categories = { [req.body.name]: [], ...data.categories };
-    saveData();
-  }
-  res.sendStatus(200);
+app.post("/note/del",auth,(r,s)=>{
+  data.users[r.user].data.categories[r.body.c].splice(r.body.i,1);
+  save(); s.sendStatus(200);
 });
 
-app.post("/cat/edit", (req, res) => {
-  if (req.body.old && data.categories[req.body.old]) {
-    const notes = data.categories[req.body.old];
-    delete data.categories[req.body.old];
-    data.categories[req.body.new] = notes;
-    saveData();
-  }
-  res.sendStatus(200);
+/* ================= FEED ================= */
+app.post("/feed/add",auth,(r,s)=>{
+  data.feed.unshift({u:r.user,t:r.body.t,time:Date.now()});
+  save(); s.sendStatus(200);
 });
 
-app.post("/cat/delete", (req, res) => {
-  delete data.categories[req.body.name];
-  saveData();
-  res.sendStatus(200);
-});
-
-app.post("/note/add", (req, res) => {
-  data.categories[req.body.cat].unshift({
-    text: req.body.text,
-    time: Date.now()
-  });
-  saveData();
-  res.sendStatus(200);
-});
-
-app.post("/note/delete", (req, res) => {
-  data.categories[req.body.cat].splice(req.body.i, 1);
-  saveData();
-  res.sendStatus(200);
-});
-
-/* ---------- SOCIAL / FEED ---------- */
-app.post("/feed/add", (req, res) => {
-  data.feed.unshift({
-    user: req.body.user || "Anon",
-    text: req.body.text,
-    time: Date.now()
-  });
-  saveData();
-  res.sendStatus(200);
-});
-
-app.post("/feed/delete", (req, res) => {
-  data.feed.splice(req.body.i, 1);
-  saveData();
-  res.sendStatus(200);
-});
-
-/* ---------- BACKUP ---------- */
-app.get("/backup", (_, res) => {
-  res.setHeader("Content-Disposition", "attachment; filename=data.json");
-  res.setHeader("Content-Type", "application/json");
-  res.send(JSON.stringify(data, null, 2));
-});
-
-/* ---------- UI ---------- */
-app.get("/", (_, res) => {
-res.send(`<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Notes / Social</title>
+/* ================= UI ================= */
+app.get("/",(_,res)=>res.send(`<!doctype html>
+<html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
 <style>
 body{margin:0;background:#121212;color:#eee;font-family:sans-serif}
-header{display:flex;align-items:center;padding:10px;background:#1e1e1e}
-#menuBtn{font-size:20px;margin-right:10px;cursor:pointer}
-nav{position:absolute;top:0;left:-200px;width:200px;height:100vh;background:#1e1e1e;transition:0.3s;display:flex;flex-direction:column;padding:10px;gap:6px}
-nav.show{left:0}
-button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;text-align:left}
-.tab{display:none;padding:10px;height:calc(100vh - 60px);overflow:auto}
-textarea,input{width:100%;padding:6px;border-radius:6px;border:1px solid #333;background:#121212;color:#eee;margin-bottom:6px}
-.item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-#quickBtns button{margin-right:6px;}
-</style>
-</head>
+#menu{position:fixed;top:0;left:-220px;width:200px;height:100%;
+background:#1e1e1e;padding:10px;transition:.3s}
+#menu button{width:100%;margin:5px 0}
+#top{padding:10px;background:#1e1e1e}
+.tab{display:none;padding:10px;margin-top:50px}
+.item{border-bottom:1px solid #333;padding:8px}
+textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:8px}
+</style></head>
 <body>
 
-<header>
-<span id="menuBtn">&#9776;</span>
-<h1>Notes</h1>
-</header>
-
-<nav id="menu">
-<button onclick="show('quick');toggleMenu()">Quick</button>
-<button onclick="show('notes');toggleMenu()">Kategorien</button>
-<button onclick="show('history');toggleMenu()">History</button>
-<button onclick="show('feed');toggleMenu()">Feed</button>
-<button onclick="downloadBackup()">Backup</button>
-</nav>
-
-<div id="quick" class="tab">
-<div id="quickBtns">
-<button onclick="copyQuick()">Copy</button>
-<button onclick="pasteQuick()">Paste</button>
-<button onclick="clearQuick()">Clear → History</button>
-</div>
-<textarea id="q" placeholder="Quick Notes..."></textarea>
+<div id=menu>
+<button onclick=show('quick')>Quick</button>
+<button onclick=show('cats')>Kategorien</button>
+<button onclick=show('hist')>History</button>
+<button onclick=show('feed')>Feed</button>
 </div>
 
-<div id="notes" class="tab">
-<div>
-<input id="newNote" placeholder="Neue Notiz...">
-<button onclick="addNote()">Speichern</button>
-</div>
-<input id="newCat" placeholder="Neue Kategorie">
-<button onclick="addCat()">Kategorie +</button>
-<div id="cats"></div>
+<div id=top>
+<button onclick="menu.style.left=menu.style.left==='0px'?'-220px':'0px'">☰</button>
 </div>
 
-<div id="history" class="tab"></div>
-<div id="feed" class="tab">
-<input id="newPost" placeholder="Neuen Beitrag schreiben...">
-<button onclick="addPost()">Posten</button>
-<div id="feedItems"></div>
+<div id=auth class=tab>
+<input id=u placeholder=User>
+<input id=p type=password placeholder=Pass>
+<button onclick=login()>Login</button>
+<button onclick=reg()>Register</button>
+</div>
+
+<div id=quick class=tab>
+<button onclick=clr()>Clear → History</button>
+<textarea id=q></textarea>
+</div>
+
+<div id=cats class=tab>
+<input id=newCat placeholder="Kategorie">
+<button onclick=addCat()>+</button>
+<div id=catList></div>
+<div id=notes></div>
+</div>
+
+<div id=hist class=tab></div>
+
+<div id=feed class=tab>
+<textarea id=post></textarea>
+<button onclick=postFeed()>Post</button>
+<div id=feedList></div>
 </div>
 
 <script>
-let ws, state = {}, activeCat = null;
-const q = document.getElementById("q");
+let sid,ws,state={},activeCat=null;
 
-function connect(){
-  ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage = e => {
-    state = JSON.parse(e.data).data;
-    render();
-  };
-}
-connect();
-
-function toggleMenu(){document.getElementById("menu").classList.toggle("show");}
-
-function show(id){
-  document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
-  document.getElementById(id).style.display="block";
-  render();
-}
-show("quick");
-
-q.oninput = () =>
-  fetch("/quick",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:q.value})});
-
-function clearQuick(){
-  fetch("/clear",{method:"POST"});
-}
-function copyQuick(){navigator.clipboard.writeText(q.value);}
-function pasteQuick(){navigator.clipboard.readText().then(t=>q.value=t);}
-
-function render(){
-  q.value = state.quick || "";
-
-  // History
-  document.getElementById("history").innerHTML =
-    (state.history||[]).map((h,i)=>
-      \`<div class="item">
-        \${h}
-        <button onclick="editHist(\${i})">✏️</button>
-        <button onclick="delHist(\${i})">🗑</button>
-      </div>\`).join("");
-
-  // Kategorien
-  const catsDiv = document.getElementById("cats");
-  if(!activeCat){
-    catsDiv.innerHTML = Object.keys(state.categories||{}).map(c=>
-      \`<div class="item">
-        <span onclick="openCat('\${c}')">\${c}</span>
-        <button onclick="delCat('\${c}')">🗑</button>
-      </div>\`).join("");
-  } else {
-    const notesDiv = state.categories[activeCat] || [];
-    catsDiv.innerHTML =
-      '<div><input id="newNote" placeholder="Neue Notiz..."><button onclick="addNote()">Speichern</button></div>' +
-      notesDiv.map((n,i)=>
-        \`<div class="item">\${n.text} <small>\${new Date(n.time).toLocaleString()}</small>
-          <button onclick="delNote(\${i})">🗑</button>
-        </div>\`).join("") +
-      '<button onclick="activeCat=null;render()">⬅ Zurück</button>';
-  }
-
-  // Feed
-  document.getElementById("feedItems").innerHTML =
-    state.feed.map((f,i)=>
-      \`<div class="item"><b>\${f.user}</b> <small>\${new Date(f.time).toLocaleString()}</small><br>\${f.text}
-        <button onclick="delPost(\${i})">🗑</button>
-      </div>\`).join("");
-}
-
-function editHist(i){
-  fetch("/history/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
-}
-function delHist(i){
-  fetch("/history/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
-}
-
-function addCat(){
-  const v=document.getElementById("newCat").value.trim();
-  if(v) fetch("/cat/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:v})});
-}
-function delCat(n){
-  if(confirm("Kategorie löschen?")) fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
-}
-function openCat(c){
-  activeCat=c;
-  render();
-}
-function addNote(){
-  const t=document.getElementById("newNote").value.trim();
-  if(!t) return;
-  fetch("/note/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})});
-  document.getElementById("newNote").value="";
-}
-function delNote(i){
-  fetch("/note/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})});
-}
-
-function addPost(){
-  const t=document.getElementById("newPost").value.trim();
-  if(!t) return;
-  fetch("/feed/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:"User1",text:t})});
-  document.getElementById("newPost").value="";
-}
-function delPost(i){
-  fetch("/feed/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
-}
-
-function downloadBackup(){
-  window.location.href="/backup";
-}
-</script>
-</body>
-</html>`);
+const api=(u,d)=>fetch(u,{
+ method:"POST",
+ headers:{"Content-Type":"application/json","x-session":sid},
+ body:JSON.stringify(d||{})
 });
 
-/* ---------- START ---------- */
-loadData();
-server.listen(PORT, () => console.log("Server 2 läuft stabil mit Social/Feed"));
+function login(){
+ fetch("/login",{method:"POST",headers:{"Content-Type":"application/json"},
+ body:JSON.stringify({u:u.value,p:p.value})})
+ .then(r=>r.json()).then(j=>{
+  sid=j.sid; show("quick"); connect();
+ });
+}
+function reg(){api("/register",{u:u.value,p:p.value});}
+
+function connect(){
+ ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
+ ws.onmessage=e=>{state=JSON.parse(e.data).data;render();}
+}
+
+function show(id){
+ document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
+ document.getElementById(id).style.display="block";
+ menu.style.left="-220px";
+}
+
+q.oninput=()=>api("/quick",{t:q.value});
+const clr=()=>api("/clear");
+
+function render(){
+ const d=state.users?.[u.value]?.data;
+ if(!d) return;
+ q.value=d.quick||"";
+
+ hist.innerHTML=d.history.map((h,i)=>\`
+ <div class=item>\${h}
+ <button onclick="api('/hist/edit',{i:\${i}})">✏️</button>
+ <button onclick="if(confirm('Löschen?'))api('/hist/del',{i:\${i}})">🗑</button>
+ </div>\`).join("");
+
+ catList.innerHTML=Object.keys(d.categories).map(c=>\`
+ <div class=item>
+ <b onclick="openCat('\${c}')">\${c}</b>
+ <button onclick="const n=prompt('Neuer Name', '\${c}');
+ if(n)api('/cat/rename',{o:'\${c}',n})">✏️</button>
+ <button onclick="if(confirm('Kategorie löschen?'))
+ api('/cat/del',{n:'\${c}'})">🗑</button>
+ </div>\`).join("");
+
+ feedList.innerHTML=state.feed.map(f=>\`
+ <div class=item><b>\${f.u}</b>: \${f.t}</div>\`).join("");
+}
+
+function addCat(){ api("/cat/add",{n:newCat.value}); newCat.value=""; }
+
+function openCat(c){
+ activeCat=c;
+ const n=state.users[u.value].data.categories[c];
+ notes.innerHTML=\`
+ <input id=nt placeholder="Notiz">
+ <button onclick="api('/note/add',{c:'\${c}',t:nt.value});nt.value=''">+</button>
+ \`+n.map((x,i)=>\`
+ <div class=item>\${x.t}
+ <button onclick="if(confirm('Notiz löschen?'))
+ api('/note/del',{c:'\${c}',i:\${i}})">🗑</button>
+ </div>\`).join("");
+}
+
+function postFeed(){ api("/feed/add",{t:post.value}); post.value=""; }
+
+show("auth");
+</script>
+</body></html>`));
+
+server.listen(PORT,()=>console.log("SERVER 2 KOMPLETT FERTIG"));
