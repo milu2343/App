@@ -123,22 +123,23 @@ body{margin:0;background:#121212;color:#eee;font-family:sans-serif}
 header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
 button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
 .tab{display:none;padding:10px;height:calc(100vh - 60px);overflow:auto}
-textarea{width:100%;height:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px}
-.item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-input{width:70%;padding:6px;border-radius:6px;border:1px solid #333;background:#121212;color:#eee;margin-right:6px}
-#quickBtns button{margin-right:6px;}
+textarea,input{width:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px;margin-bottom:8px}
+.item{border-bottom:1px solid #333;padding:8px}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.topbar{display:flex;gap:6px;margin-bottom:8px}
 </style>
 </head>
 <body>
 
 <header>
 <button onclick="show('quick')">Quick</button>
-<button onclick="show('notes')">Kategorien</button>
+<button onclick="show('cats')">Kategorien</button>
 <button onclick="show('history')">History</button>
 </header>
 
+<!-- QUICK -->
 <div id="quick" class="tab">
-<div id="quickBtns">
+<div class="row">
 <button onclick="copyQuick()">Copy</button>
 <button onclick="pasteQuick()">Paste</button>
 <button onclick="clearQuick()">Clear → History</button>
@@ -146,25 +147,36 @@ input{width:70%;padding:6px;border-radius:6px;border:1px solid #333;background:#
 <textarea id="q" placeholder="Quick Notes..."></textarea>
 </div>
 
-<div id="notes" class="tab">
-<div>
+<!-- KATEGORIEN LISTE -->
+<div id="cats" class="tab">
 <input id="newCat" placeholder="Neue Kategorie">
 <button onclick="addCat()">Kategorie +</button>
+<div id="catsList"></div>
 </div>
-<div id="cats"></div>
+
+<!-- KATEGORIE VIEW -->
+<div id="catView" class="tab">
+<div class="topbar">
+<button onclick="backToCats()">← Zurück</button>
+<button onclick="renameActiveCat()">✏️ Umbenennen</button>
+<button onclick="deleteActiveCat()">🗑 Löschen</button>
+</div>
+<input id="newNote" placeholder="Neue Notiz...">
+<button onclick="addNote()">Speichern</button>
 <div id="catNotes"></div>
 </div>
 
+<!-- HISTORY -->
 <div id="history" class="tab"></div>
 
 <script>
-let ws, state = {}, activeCat = null;
-const q = document.getElementById("q");
+let ws, state={}, activeCat=null;
+const q=document.getElementById("q");
 
 function connect(){
-  ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-  ws.onmessage = e => {
-    state = JSON.parse(e.data).data;
+  ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
+  ws.onmessage=e=>{
+    state=JSON.parse(e.data).data;
     render();
   };
 }
@@ -173,94 +185,97 @@ connect();
 function show(id){
   document.querySelectorAll(".tab").forEach(t=>t.style.display="none");
   document.getElementById(id).style.display="block";
-  render();
 }
+
 show("quick");
 
-q.oninput = () =>
-  fetch("/quick",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:q.value})});
-
-function clearQuick(){ fetch("/clear",{method:"POST"}); }
+q.oninput=()=>fetch("/quick",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:q.value})});
+function clearQuick(){fetch("/clear",{method:"POST"});}
 function copyQuick(){navigator.clipboard.writeText(q.value);}
 function pasteQuick(){navigator.clipboard.readText().then(t=>q.value=t);}
 
 function render(){
-  q.value = state.quick || "";
+  q.value=state.quick||"";
 
-  // History
-  const histDiv = document.getElementById("history");
-  histDiv.innerHTML = (state.history||[]).map((h,i)=>
-    \`<div class="item">\${h}</div>\`).join("");
+  /* HISTORY */
+  history.innerHTML=(state.history||[]).map((h,i)=>`
+  <div class="item">
+    ${h}
+    <button onclick="editHist(${i})">✏️</button>
+    <button onclick="delHist(${i})">🗑</button>
+  </div>`).join("");
 
-  // Kategorien
-  const catsDiv = document.getElementById("cats");
-  catsDiv.innerHTML = '';
-  Object.keys(state.categories||{}).forEach(c=>{
-    const item = document.createElement("div");
-    item.className = "item";
-    const btn = document.createElement("button");
-    btn.textContent = c;
-    btn.onclick = ()=>openCat(c);
-    const del = document.createElement("button");
-    del.textContent="🗑";
-    del.onclick = ()=>{if(confirm("Kategorie löschen?")) delCat(c)};
-    const rename = document.createElement("button");
-    rename.textContent="✏️";
-    rename.onclick = ()=>{ const n = prompt("Neuer Name",c); if(n) renameCat(c,n)};
-    item.appendChild(btn); item.appendChild(rename); item.appendChild(del);
-    catsDiv.appendChild(item);
-  });
+  /* CATEGORIES */
+  catsList.innerHTML=Object.keys(state.categories||{}).map(c=>`
+  <div class="item">
+    <button onclick="openCat('${c}')">${c}</button>
+  </div>`).join("");
 
-  // Aktive Kategorie Notizen
-  const catNotes = document.getElementById("catNotes");
-  catNotes.innerHTML="";
-  if(activeCat && state.categories[activeCat]){
-    const notes = state.categories[activeCat];
-    const div = document.createElement("div");
-    const inp = document.createElement("input");
-    inp.id="newNote";
-    inp.placeholder="Neue Notiz...";
-    const btn = document.createElement("button");
-    btn.textContent="Speichern";
-    btn.onclick=addNote;
-    div.appendChild(inp); div.appendChild(btn);
-    catNotes.appendChild(div);
-
-    notes.forEach((n,i)=>{
-      const d = document.createElement("div");
-      d.className="item";
-      d.textContent=n.text;
-      const del = document.createElement("button");
-      del.textContent="🗑";
-      del.onclick=()=>delNote(i);
-      d.appendChild(del);
-      catNotes.appendChild(d);
-    });
+  /* CATEGORY NOTES */
+  if(activeCat){
+    catNotes.innerHTML=(state.categories[activeCat]||[]).map((n,i)=>`
+    <div class="item">
+      ${n.text}
+      <button onclick="delNote(${i})">🗑</button>
+    </div>`).join("");
   }
 }
 
-function addCat(){
-  const v=document.getElementById("newCat").value.trim();
-  if(v) fetch("/cat/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:v})});
+/* HISTORY */
+function editHist(i){
+  fetch("/history/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
+  show("quick");
+}
+function delHist(i){
+  if(confirm("Eintrag löschen?"))
+    fetch("/history/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
 }
 
-function delCat(n){ fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})}); }
-function renameCat(oldN,newN){ fetch("/cat/rename",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({oldName:oldN,newName:newN})}); }
+/* CATEGORIES */
+function addCat(){
+  const v=newCat.value.trim();
+  if(v) fetch("/cat/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:v})});
+  newCat.value="";
+}
 
-function openCat(c){ activeCat=c; render(); }
+function openCat(c){
+  activeCat=c;
+  show("catView");
+  render();
+}
 
+function backToCats(){
+  activeCat=null;
+  show("cats");
+}
+
+function renameActiveCat(){
+  const n=prompt("Neuer Name",activeCat);
+  if(n) fetch("/cat/rename",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({oldName:activeCat,newName:n})});
+  activeCat=n;
+}
+
+function deleteActiveCat(){
+  if(confirm("Kategorie wirklich löschen?")){
+    fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:activeCat})});
+    backToCats();
+  }
+}
+
+/* NOTES */
 function addNote(){
-  const t=document.getElementById("newNote").value.trim();
+  const t=newNote.value.trim();
   if(!t) return;
   fetch("/note/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})});
-  document.getElementById("newNote").value="";
+  newNote.value="";
 }
 function delNote(i){
   fetch("/note/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})});
 }
 </script>
 </body>
-</html>`);});
+</html>
+`);});
 
 /* ---------- START ---------- */
 loadData();
