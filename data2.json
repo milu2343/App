@@ -1,0 +1,20 @@
+{
+  "users": {
+    "alex": {
+      "password": "1234",
+      "data": {
+        "quick": "",
+        "history": [],
+        "categories": {}
+      }
+    }
+  },
+  "feed": [
+    {
+      "id": 1,
+      "user": "alex",
+      "text": "Öffentlicher Post",
+      "time": 1710000000000
+    }
+  ]
+}
