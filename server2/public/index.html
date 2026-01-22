@@ -2,24 +2,251 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Server2</title>
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#121212;
+  color:#eee;
+  font-family:sans-serif;
+}
+button{
+  background:#2c2c2c;
+  color:#fff;
+  border:none;
+  padding:8px 12px;
+  border-radius:6px;
+  cursor:pointer;
+}
+input, textarea{
+  width:100%;
+  background:#121212;
+  color:#eee;
+  border:1px solid #333;
+  padding:8px;
+  border-radius:6px;
+}
+textarea{min-height:120px}
+.item{
+  border-bottom:1px solid #333;
+  padding:10px 0;
+}
+
+/* --- LOGIN --- */
+#login{
+  padding:20px;
+}
+#login input{margin-bottom:10px}
+
+/* --- HEADER --- */
+header{
+  height:50px;
+  display:flex;
+  align-items:center;
+  padding:0 10px;
+  background:#1e1e1e;
+}
+#menuBtn{
+  font-size:22px;
+  margin-right:10px;
+}
+
+/* --- MENU --- */
+#menu{
+  position:fixed;
+  top:50px;
+  left:0;
+  width:220px;
+  height:100%;
+  background:#1a1a1a;
+  transform:translateX(-100%);
+  transition:.2s;
+  padding:10px;
+}
+#menu.show{transform:translateX(0)}
+#menu button{
+  width:100%;
+  margin-bottom:6px;
+}
+
+/* --- CONTENT --- */
+#content{
+  padding:10px;
+}
+.tab{display:none}
+.tab.active{display:block}
+</style>
 </head>
 <body>
 
+<!-- LOGIN -->
 <div id="login">
-  <input id="user" placeholder="User">
-  <input id="pass" placeholder="Passwort" type="password">
+  <h2>Login</h2>
+  <input id="user" placeholder="Username">
+  <input id="pass" type="password" placeholder="Passwort">
   <button onclick="login()">Login</button>
-  <button onclick="register()">Register</button>
+  <button onclick="register()">Registrieren</button>
 </div>
 
+<!-- APP -->
 <div id="app" hidden>
-  <textarea id="quick"></textarea>
-  <button onclick="clearQuick()">Clear</button>
+
+<header>
+  <button id="menuBtn" onclick="toggleMenu()">☰</button>
+  <b>Notes</b>
+</header>
+
+<div id="menu">
+  <button onclick="showTab('quick')">Quick</button>
+  <button onclick="showTab('cats')">Kategorien</button>
+  <button onclick="showTab('history')">History</button>
+  <button onclick="showTab('feed')">Feed</button>
 </div>
 
-<script src="app.js"></script>
+<div id="content">
+
+<!-- QUICK -->
+<div id="quick" class="tab">
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <button onclick="copyQuick()">Copy</button>
+    <button onclick="pasteQuick()">Paste</button>
+    <button onclick="clearQuick()">Clear → History</button>
+  </div>
+  <textarea id="quickText" placeholder="Quick Notes..."></textarea>
+</div>
+
+<!-- CATEGORIES -->
+<div id="cats" class="tab">
+  <div style="display:flex;gap:6px;margin-bottom:10px">
+    <input id="newCat" placeholder="Neue Kategorie">
+    <button onclick="addCat()">+</button>
+  </div>
+
+  <div id="catList"></div>
+  <div id="catView"></div>
+</div>
+
+<!-- HISTORY -->
+<div id="history" class="tab"></div>
+
+<!-- FEED -->
+<div id="feed" class="tab">
+  <textarea id="feedText" placeholder="Post schreiben..."></textarea>
+  <button onclick="postFeed()">Posten</button>
+  <div id="feedList"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+let ws, state={}, me=null, activeCat=null;
+
+function toggleMenu(){
+  menu.classList.toggle("show");
+}
+function showTab(id){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  menu.classList.remove("show");
+  render();
+}
+
+/* --- AUTH --- */
+function login(){
+  me=user.value;
+  fetch("/api/login",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,pass:pass.value})})
+  .then(r=>r.ok&&start());
+}
+function register(){
+  fetch("/api/register",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:user.value,pass:pass.value})});
+}
+function start(){
+  login.hidden=true;
+  app.hidden=false;
+  connect();
+  showTab("quick");
+}
+
+/* --- WS --- */
+function connect(){
+  ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
+  ws.onmessage=e=>{
+    state=JSON.parse(e.data);
+    render();
+  };
+}
+
+/* --- QUICK --- */
+quickText.oninput=()=>fetch("/api/quick",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,text:quickText.value})});
+function clearQuick(){fetch("/api/clear",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me})});}
+function copyQuick(){navigator.clipboard.writeText(quickText.value);}
+function pasteQuick(){navigator.clipboard.readText().then(t=>quickText.value=t);}
+
+/* --- CATEGORIES --- */
+function addCat(){
+  const v=newCat.value.trim();
+  if(v) fetch("/api/cat/add",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,name:v})});
+  newCat.value="";
+}
+function openCat(c){
+  activeCat=c;
+  render();
+}
+function addNote(){
+  const t=document.getElementById("newNote").value.trim();
+  if(!t)return;
+  fetch("/api/note/add",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,cat:activeCat,text:t})});
+}
+
+/* --- HISTORY --- */
+function restoreHist(i){
+  fetch("/api/quick",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,text:state.users[me].history[i]})});
+}
+
+/* --- FEED --- */
+function postFeed(){
+  const t=feedText.value.trim();
+  if(!t)return;
+  fetch("/api/feed/post",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,text:t})});
+  feedText.value="";
+}
+
+/* --- RENDER --- */
+function render(){
+  if(!state.users||!state.users[me])return;
+  const u=state.users[me];
+
+  quickText.value=u.quick||"";
+
+  history.innerHTML=u.history.map((h,i)=>`
+    <div class="item">${h}
+      <button onclick="restoreHist(${i})">↩</button>
+    </div>`).join("");
+
+  catList.innerHTML=Object.keys(u.categories).map(c=>`
+    <div class="item">
+      <button onclick="openCat('${c}')">${c}</button>
+    </div>`).join("");
+
+  catView.innerHTML="";
+  if(activeCat){
+    const notes=u.categories[activeCat];
+    catView.innerHTML=`
+      <h3>${activeCat}</h3>
+      <input id="newNote" placeholder="Neue Notiz">
+      <button onclick="addNote()">Speichern</button>
+      ${notes.map(n=>`<div class="item">${n.text}</div>`).join("")}
+    `;
+  }
+
+  feedList.innerHTML=(state.feed?.posts||[]).map(p=>`
+    <div class="item"><b>${p.user}</b><br>${p.text}</div>`).join("");
+}
+</script>
+
 </body>
 </html>
