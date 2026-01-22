@@ -54,10 +54,7 @@ app.post("/quick", (req, res) => {
 });
 
 app.post("/clear", (_, res) => {
-  if (
-    data.quick &&
-    data.history[0] !== data.quick
-  ) {
+  if (data.quick && data.history[0] !== data.quick) {
     data.history.unshift(data.quick);
     data.history = data.history.slice(0, 50);
   }
@@ -80,10 +77,8 @@ app.post("/history/edit", (req, res) => {
 
 app.post("/cat/add", (req, res) => {
   if (!data.categories[req.body.name]) {
-    data.categories = {
-      [req.body.name]: [],
-      ...data.categories
-    };
+    // neue Kategorie oben einfügen
+    data.categories = { [req.body.name]: [], ...data.categories };
     saveData();
   }
   res.sendStatus(200);
@@ -121,10 +116,12 @@ res.send(`<!DOCTYPE html>
 <style>
 body{margin:0;background:#121212;color:#eee;font-family:sans-serif}
 header{display:flex;gap:6px;padding:10px;background:#1e1e1e}
-button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px}
+button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
 .tab{display:none;padding:10px;height:calc(100vh - 60px);overflow:auto}
 textarea{width:100%;height:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px}
-.item{border-bottom:1px solid #333;padding:10px}
+.item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
+input{width:80%;padding:6px;border-radius:6px;border:1px solid #333;background:#121212;color:#eee;margin-right:6px}
+#quickBtns button{margin-right:6px;}
 </style>
 </head>
 <body>
@@ -136,13 +133,21 @@ textarea{width:100%;height:100%;background:#121212;color:#eee;border:1px solid #
 </header>
 
 <div id="quick" class="tab">
+<div id="quickBtns">
+<button onclick="copyQuick()">Copy</button>
+<button onclick="pasteQuick()">Paste</button>
 <button onclick="clearQuick()">Clear → History</button>
-<textarea id="q"></textarea>
+</div>
+<textarea id="q" placeholder="Quick Notes..."></textarea>
 </div>
 
 <div id="notes" class="tab">
+<div>
+<input id="newNote" placeholder="Neue Notiz...">
+<button onclick="addNote()">Speichern</button>
+</div>
 <input id="newCat" placeholder="Neue Kategorie">
-<button onclick="addCat()">+</button>
+<button onclick="addCat()">Kategorie +</button>
 <div id="cats"></div>
 </div>
 
@@ -175,9 +180,13 @@ function clearQuick(){
   fetch("/clear",{method:"POST"});
 }
 
+function copyQuick(){navigator.clipboard.writeText(q.value);}
+function pasteQuick(){navigator.clipboard.readText().then(t=>q.value=t);}
+
 function render(){
   q.value = state.quick || "";
 
+  // History
   document.getElementById("history").innerHTML =
     (state.history||[]).map((h,i)=>
       \`<div class="item">
@@ -186,12 +195,24 @@ function render(){
         <button onclick="delHist(\${i})">🗑</button>
       </div>\`).join("");
 
+  // Kategorien
   document.getElementById("cats").innerHTML =
     Object.keys(state.categories||{}).map(c=>
       \`<div class="item">
         <button onclick="openCat('\${c}')">\${c}</button>
         <button onclick="delCat('\${c}')">🗑</button>
       </div>\`).join("");
+
+  // Aktive Kategorie Notizen
+  if(activeCat){
+    const notesDiv = state.categories[activeCat] || [];
+    document.getElementById("cats").innerHTML =
+      '<div><input id="newNote" placeholder="Neue Notiz..."><button onclick="addNote()">Speichern</button></div>' +
+      notesDiv.map((n,i)=>
+        \`<div class="item">\${n.text}
+          <button onclick="delNote(\${i})">🗑</button>
+        </div>\`).join("");
+  }
 }
 
 function editHist(i){
@@ -213,19 +234,15 @@ function delCat(n){
 
 function openCat(c){
   activeCat=c;
-  document.getElementById("cats").innerHTML =
-    state.categories[c].map((n,i)=>
-      \`<div class="item">\${n.text}
-        <button onclick="delNote(\${i})">🗑</button>
-      </div>\`).join("") +
-    '<textarea id="newNote"></textarea><button onclick="addNote()">+</button>';
+  render();
 }
 
 function addNote(){
-  const t=document.getElementById("newNote").value;
-  if(t) fetch("/note/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})});
+  const t=document.getElementById("newNote").value.trim();
+  if(!t) return;
+  fetch("/note/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,text:t})});
+  document.getElementById("newNote").value="";
 }
-
 function delNote(i){
   fetch("/note/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cat:activeCat,i})});
 }
