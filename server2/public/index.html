@@ -35,13 +35,11 @@ textarea{min-height:120px}
   padding:10px 0;
 }
 
-/* --- LOGIN --- */
-#login{
-  padding:20px;
-}
+/* LOGIN */
+#login{padding:20px}
 #login input{margin-bottom:10px}
 
-/* --- HEADER --- */
+/* HEADER */
 header{
   height:50px;
   display:flex;
@@ -54,7 +52,7 @@ header{
   margin-right:10px;
 }
 
-/* --- MENU --- */
+/* MENU */
 #menu{
   position:fixed;
   top:50px;
@@ -72,10 +70,8 @@ header{
   margin-bottom:6px;
 }
 
-/* --- CONTENT --- */
-#content{
-  padding:10px;
-}
+/* CONTENT */
+#content{padding:10px}
 .tab{display:none}
 .tab.active{display:block}
 </style>
@@ -118,13 +114,12 @@ header{
   <textarea id="quickText" placeholder="Quick Notes..."></textarea>
 </div>
 
-<!-- CATEGORIES -->
+<!-- KATEGORIEN -->
 <div id="cats" class="tab">
   <div style="display:flex;gap:6px;margin-bottom:10px">
     <input id="newCat" placeholder="Neue Kategorie">
     <button onclick="addCat()">+</button>
   </div>
-
   <div id="catList"></div>
   <div id="catView"></div>
 </div>
@@ -145,9 +140,8 @@ header{
 <script>
 let ws, state={}, me=null, activeCat=null;
 
-function toggleMenu(){
-  menu.classList.toggle("show");
-}
+/* MENU */
+function toggleMenu(){menu.classList.toggle("show")}
 function showTab(id){
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   document.getElementById(id).classList.add("active");
@@ -155,9 +149,9 @@ function showTab(id){
   render();
 }
 
-/* --- AUTH --- */
+/* AUTH */
 function login(){
-  me=user.value;
+  me=user.value.trim();
   fetch("/api/login",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,pass:pass.value})})
   .then(r=>r.ok&&start());
 }
@@ -171,7 +165,7 @@ function start(){
   showTab("quick");
 }
 
-/* --- WS --- */
+/* WS */
 function connect(){
   ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
   ws.onmessage=e=>{
@@ -180,34 +174,34 @@ function connect(){
   };
 }
 
-/* --- QUICK --- */
+/* QUICK */
 quickText.oninput=()=>fetch("/api/quick",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,text:quickText.value})});
-function clearQuick(){fetch("/api/clear",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me})});}
-function copyQuick(){navigator.clipboard.writeText(quickText.value);}
-function pasteQuick(){navigator.clipboard.readText().then(t=>quickText.value=t);}
+function clearQuick(){fetch("/api/clear",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me})})}
+function copyQuick(){navigator.clipboard.writeText(quickText.value)}
+function pasteQuick(){navigator.clipboard.readText().then(t=>quickText.value=t)}
 
-/* --- CATEGORIES --- */
+/* CATEGORIES */
 function addCat(){
   const v=newCat.value.trim();
   if(v) fetch("/api/cat/add",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,name:v})});
   newCat.value="";
 }
-function openCat(c){
-  activeCat=c;
-  render();
-}
+function openCat(c){activeCat=c;render()}
 function addNote(){
   const t=document.getElementById("newNote").value.trim();
   if(!t)return;
   fetch("/api/note/add",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,cat:activeCat,text:t})});
 }
 
-/* --- HISTORY --- */
+/* HISTORY */
 function restoreHist(i){
   fetch("/api/quick",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,text:state.users[me].history[i]})});
 }
+function delHist(i){
+  fetch("/api/history/delete",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({user:me,i})});
+}
 
-/* --- FEED --- */
+/* FEED */
 function postFeed(){
   const t=feedText.value.trim();
   if(!t)return;
@@ -215,7 +209,7 @@ function postFeed(){
   feedText.value="";
 }
 
-/* --- RENDER --- */
+/* RENDER */
 function render(){
   if(!state.users||!state.users[me])return;
   const u=state.users[me];
@@ -225,6 +219,7 @@ function render(){
   history.innerHTML=u.history.map((h,i)=>`
     <div class="item">${h}
       <button onclick="restoreHist(${i})">↩</button>
+      <button onclick="delHist(${i})">🗑</button>
     </div>`).join("");
 
   catList.innerHTML=Object.keys(u.categories).map(c=>`
@@ -250,3 +245,4 @@ function render(){
 
 </body>
 </html>
+
