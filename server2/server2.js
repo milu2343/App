@@ -17,8 +17,8 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------- FILES ---------- */
-const USERS_FILE = "./data/users.json";
-const FEED_FILE = "./data/feed.json";
+const USERS_FILE = "/data/users.json";
+const FEED_FILE = "/data/feed.json";
 
 /* ---------- HELPERS ---------- */
 function read(file, fallback) {
@@ -150,3 +150,4 @@ app.post("/api/feed/post", (req, res) => {
 
 /* ---------- START ---------- */
 server.listen(PORT, () => console.log("Server2 läuft stabil"));
+
