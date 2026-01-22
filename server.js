@@ -80,10 +80,8 @@ app.post("/cat/add", (req, res) => {
 });
 
 app.post("/cat/delete", (req, res) => {
-  if (confirm("Kategorie wirklich löschen?")) {
-    delete data.categories[req.body.name];
-    saveData();
-  }
+  delete data.categories[req.body.name];
+  saveData();
   res.sendStatus(200);
 });
 
@@ -190,13 +188,9 @@ function render(){
   q.value = state.quick || "";
 
   // History
-  document.getElementById("history").innerHTML =
-    (state.history||[]).map((h,i)=>
-      \`<div class="item">
-        \${h}
-        <button onclick="editHist(\${i})">✏️</button>
-        <button onclick="delHist(\${i})">🗑</button>
-      </div>\`).join("");
+  const histDiv = document.getElementById("history");
+  histDiv.innerHTML = (state.history||[]).map((h,i)=>
+    \`<div class="item">\${h}</div>\`).join("");
 
   // Kategorien
   const catsDiv = document.getElementById("cats");
@@ -243,14 +237,6 @@ function render(){
       catNotes.appendChild(d);
     });
   }
-}
-
-function editHist(i){
-  fetch("/history/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
-}
-
-function delHist(i){
-  fetch("/history/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({i})});
 }
 
 function addCat(){
