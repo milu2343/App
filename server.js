@@ -22,9 +22,7 @@ let data = {
 function loadData() {
   if (fs.existsSync(DATA_FILE)) {
     data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-  } else {
-    saveData();
-  }
+  } else saveData();
 }
 
 function saveData() {
@@ -40,9 +38,7 @@ function broadcast() {
   });
 }
 
-wss.on("connection", ws => {
-  ws.send(JSON.stringify({ type: "sync", data }));
-});
+wss.on("connection", ws => ws.send(JSON.stringify({ type: "sync", data })));
 
 /* ---------- API ---------- */
 app.get("/data", (_, res) => res.json(data));
@@ -77,7 +73,6 @@ app.post("/history/edit", (req, res) => {
 
 app.post("/cat/add", (req, res) => {
   if (!data.categories[req.body.name]) {
-    // neue Kategorie oben einfügen
     data.categories = { [req.body.name]: [], ...data.categories };
     saveData();
   }
@@ -85,22 +80,34 @@ app.post("/cat/add", (req, res) => {
 });
 
 app.post("/cat/delete", (req, res) => {
-  delete data.categories[req.body.name];
-  saveData();
+  if (confirm("Kategorie wirklich löschen?")) {
+    delete data.categories[req.body.name];
+    saveData();
+  }
+  res.sendStatus(200);
+});
+
+app.post("/cat/rename", (req, res) => {
+  const { oldName, newName } = req.body;
+  if (data.categories[oldName] && newName) {
+    data.categories = { ...data.categories, [newName]: data.categories[oldName] };
+    delete data.categories[oldName];
+    saveData();
+  }
   res.sendStatus(200);
 });
 
 app.post("/note/add", (req, res) => {
-  data.categories[req.body.cat].unshift({
-    text: req.body.text,
-    time: Date.now()
-  });
+  const { cat, text } = req.body;
+  if (!cat || !text) return res.sendStatus(400);
+  data.categories[cat].unshift({ text, time: Date.now() });
   saveData();
   res.sendStatus(200);
 });
 
 app.post("/note/delete", (req, res) => {
-  data.categories[req.body.cat].splice(req.body.i, 1);
+  const { cat, i } = req.body;
+  data.categories[cat].splice(i, 1);
   saveData();
   res.sendStatus(200);
 });
@@ -120,7 +127,7 @@ button{background:#2c2c2c;color:#fff;border:none;padding:8px 12px;border-radius:
 .tab{display:none;padding:10px;height:calc(100vh - 60px);overflow:auto}
 textarea{width:100%;height:100%;background:#121212;color:#eee;border:1px solid #333;padding:10px}
 .item{border-bottom:1px solid #333;padding:10px;margin-bottom:5px}
-input{width:80%;padding:6px;border-radius:6px;border:1px solid #333;background:#121212;color:#eee;margin-right:6px}
+input{width:70%;padding:6px;border-radius:6px;border:1px solid #333;background:#121212;color:#eee;margin-right:6px}
 #quickBtns button{margin-right:6px;}
 </style>
 </head>
@@ -143,12 +150,11 @@ input{width:80%;padding:6px;border-radius:6px;border:1px solid #333;background:#
 
 <div id="notes" class="tab">
 <div>
-<input id="newNote" placeholder="Neue Notiz...">
-<button onclick="addNote()">Speichern</button>
-</div>
 <input id="newCat" placeholder="Neue Kategorie">
 <button onclick="addCat()">Kategorie +</button>
+</div>
 <div id="cats"></div>
+<div id="catNotes"></div>
 </div>
 
 <div id="history" class="tab"></div>
@@ -176,10 +182,7 @@ show("quick");
 q.oninput = () =>
   fetch("/quick",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:q.value})});
 
-function clearQuick(){
-  fetch("/clear",{method:"POST"});
-}
-
+function clearQuick(){ fetch("/clear",{method:"POST"}); }
 function copyQuick(){navigator.clipboard.writeText(q.value);}
 function pasteQuick(){navigator.clipboard.readText().then(t=>q.value=t);}
 
@@ -196,22 +199,49 @@ function render(){
       </div>\`).join("");
 
   // Kategorien
-  document.getElementById("cats").innerHTML =
-    Object.keys(state.categories||{}).map(c=>
-      \`<div class="item">
-        <button onclick="openCat('\${c}')">\${c}</button>
-        <button onclick="delCat('\${c}')">🗑</button>
-      </div>\`).join("");
+  const catsDiv = document.getElementById("cats");
+  catsDiv.innerHTML = '';
+  Object.keys(state.categories||{}).forEach(c=>{
+    const item = document.createElement("div");
+    item.className = "item";
+    const btn = document.createElement("button");
+    btn.textContent = c;
+    btn.onclick = ()=>openCat(c);
+    const del = document.createElement("button");
+    del.textContent="🗑";
+    del.onclick = ()=>{if(confirm("Kategorie löschen?")) delCat(c)};
+    const rename = document.createElement("button");
+    rename.textContent="✏️";
+    rename.onclick = ()=>{ const n = prompt("Neuer Name",c); if(n) renameCat(c,n)};
+    item.appendChild(btn); item.appendChild(rename); item.appendChild(del);
+    catsDiv.appendChild(item);
+  });
 
   // Aktive Kategorie Notizen
-  if(activeCat){
-    const notesDiv = state.categories[activeCat] || [];
-    document.getElementById("cats").innerHTML =
-      '<div><input id="newNote" placeholder="Neue Notiz..."><button onclick="addNote()">Speichern</button></div>' +
-      notesDiv.map((n,i)=>
-        \`<div class="item">\${n.text}
-          <button onclick="delNote(\${i})">🗑</button>
-        </div>\`).join("");
+  const catNotes = document.getElementById("catNotes");
+  catNotes.innerHTML="";
+  if(activeCat && state.categories[activeCat]){
+    const notes = state.categories[activeCat];
+    const div = document.createElement("div");
+    const inp = document.createElement("input");
+    inp.id="newNote";
+    inp.placeholder="Neue Notiz...";
+    const btn = document.createElement("button");
+    btn.textContent="Speichern";
+    btn.onclick=addNote;
+    div.appendChild(inp); div.appendChild(btn);
+    catNotes.appendChild(div);
+
+    notes.forEach((n,i)=>{
+      const d = document.createElement("div");
+      d.className="item";
+      d.textContent=n.text;
+      const del = document.createElement("button");
+      del.textContent="🗑";
+      del.onclick=()=>delNote(i);
+      d.appendChild(del);
+      catNotes.appendChild(d);
+    });
   }
 }
 
@@ -228,14 +258,10 @@ function addCat(){
   if(v) fetch("/cat/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:v})});
 }
 
-function delCat(n){
-  fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
-}
+function delCat(n){ fetch("/cat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})}); }
+function renameCat(oldN,newN){ fetch("/cat/rename",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({oldName:oldN,newName:newN})}); }
 
-function openCat(c){
-  activeCat=c;
-  render();
-}
+function openCat(c){ activeCat=c; render(); }
 
 function addNote(){
   const t=document.getElementById("newNote").value.trim();
@@ -248,8 +274,7 @@ function delNote(i){
 }
 </script>
 </body>
-</html>`);
-});
+</html>`);});
 
 /* ---------- START ---------- */
 loadData();
